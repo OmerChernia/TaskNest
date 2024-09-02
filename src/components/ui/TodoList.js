@@ -13,7 +13,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-// Placeholder data
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
   { id: 2, name: 'Personal', color: '#00ff00' },
@@ -26,34 +25,53 @@ const initialTasks = [
   { id: 3, text: 'Call mom', tag: 2, dueDate: '2024-09-07', completed: false, displayDate: null },
 ];
 
+const initialSections = ['New Tasks', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const TodoList = () => {
-  const [tasks, setTasks] = useState(() => {
-    const storedTasks = localStorage.getItem('tasks');
-    return storedTasks ? JSON.parse(storedTasks) : initialTasks;
-  });
-  
-  const [tags, setTags] = useState(() => {
-    const storedTags = localStorage.getItem('tags');
-    return storedTags ? JSON.parse(storedTags) : initialTags;
-  });
-  
+  const [tasks, setTasks] = useState(initialTasks);
+  const [tags, setTags] = useState(initialTags);
+  const [sections, setSections] = useState(initialSections);
   const [newTask, setNewTask] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [newSectionName, setNewSectionName] = useState('');
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#000000');
   const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    setIsMounted(true);
+    if (typeof window !== 'undefined') {
+      const storedTasks = localStorage.getItem('tasks');
+      const storedTags = localStorage.getItem('tags');
+      const storedSections = localStorage.getItem('sections');
+
+      if (storedTasks) setTasks(JSON.parse(storedTasks));
+      if (storedTags) setTags(JSON.parse(storedTags));
+      if (storedSections) setSections(JSON.parse(storedSections));
+    }
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('tags', JSON.stringify(tags));
-  }, [tags]);
+    if (isMounted) {
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+  }, [tasks, isMounted]);
+
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('tags', JSON.stringify(tags));
+    }
+  }, [tags, isMounted]);
+
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('sections', JSON.stringify(sections));
+    }
+  }, [sections, isMounted]);
 
   const addTask = () => {
     if (newTask.trim() !== '' && selectedTag !== '') {
@@ -63,7 +81,7 @@ const TodoList = () => {
         tag: parseInt(selectedTag),
         dueDate: dueDate || null,
         completed: false,
-        displayDate: null, // All new tasks start in the "New Tasks" section
+        displayDate: null,
       };
       setTasks([...tasks, newTaskObj]);
       setNewTask('');
@@ -73,7 +91,7 @@ const TodoList = () => {
   };
 
   const toggleTaskCompletion = (taskId) => {
-    setTasks(tasks.map(task => 
+    setTasks(tasks.map(task =>
       task.id === taskId ? { ...task, completed: !task.completed } : task
     ));
   };
@@ -96,15 +114,35 @@ const TodoList = () => {
   };
 
   const deleteTag = (tagId) => {
-    // Remove the tag from the tags list
     const updatedTags = tags.filter(tag => tag.id !== tagId);
     setTags(updatedTags);
-
-    // Optionally, remove the tag from any tasks that use it
-    const updatedTasks = tasks.map(task => 
+    const updatedTasks = tasks.map(task =>
       task.tag === tagId ? { ...task, tag: null } : task
     );
     setTasks(updatedTasks);
+  };
+
+  const addSection = () => {
+    if (newSectionName.trim() !== '' && !sections.includes(newSectionName)) {
+      setSections([...sections, newSectionName]);
+      setNewSectionName('');
+    }
+  };
+
+  const deleteSection = (sectionName) => {
+    if (initialSections.includes(sectionName)) {
+      alert("Cannot delete default sections.");
+      return;
+    }
+    setSections(sections.filter(section => section !== sectionName));
+  };
+
+  const getTasksForSection = (sectionName) => {
+    if (sectionName === 'New Tasks') {
+      return tasks.filter(task => task.displayDate === null);
+    }
+    const dayDate = getDateForDay(sectionName);
+    return tasks.filter(task => task.displayDate === dayDate);
   };
 
   const getDateForDay = (day) => {
@@ -112,11 +150,6 @@ const TodoList = () => {
     const diff = daysOfWeek.indexOf(day) - today.getDay();
     const date = new Date(today.setDate(today.getDate() + diff));
     return date.toISOString().split('T')[0];
-  };
-
-  const getTasksForDay = (day) => {
-    const dayDate = getDateForDay(day);
-    return tasks.filter(task => task.displayDate === dayDate);
   };
 
   const onDragStart = (e, taskId) => {
@@ -128,12 +161,12 @@ const TodoList = () => {
     e.preventDefault();
   };
 
-  const onDrop = (e, targetDay) => {
+  const onDrop = (e, targetSection) => {
     e.preventDefault();
     if (draggedTaskId) {
       const updatedTasks = tasks.map(task => {
         if (task.id === draggedTaskId) {
-          return { ...task, displayDate: targetDay === 'New Tasks' ? null : getDateForDay(targetDay) };
+          return { ...task, displayDate: targetSection === 'New Tasks' ? null : getDateForDay(targetSection) };
         }
         return task;
       });
@@ -142,11 +175,19 @@ const TodoList = () => {
     }
   };
 
+  const renderSectionTitle = (section) => {
+    if (initialSections.includes(section)) {
+      const date = getDateForDay(section);
+      return section === "New Tasks" ? section : `${section} (${date})`;
+    }
+    return section;
+  };
+
   const renderTask = (task) => (
     <li
       key={task.id}
-      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-1500' : ''}`}
-      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color}}
+      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-300 text-gray-800' : ''}`}
+      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
       draggable
       onDragStart={(e) => onDragStart(e, task.id)}
     >
@@ -207,26 +248,37 @@ const TodoList = () => {
         <Button onClick={addTask} className="px-4 py-2">Add</Button>
       </div>
 
-      <div className="mb-4" onDragOver={onDragOver} onDrop={(e) => onDrop(e, 'New Tasks')}>
-        <h2 className="text-xl font-bold">New Tasks</h2>
-        <ul>
-          {tasks.filter(task => task.displayDate === null).map(renderTask)}
-        </ul>
-      </div>
-
-      {daysOfWeek.map(day => (
+      {sections.map(section => (
         <div 
-          key={day} 
+          key={section} 
           className="mb-4"
           onDragOver={onDragOver}
-          onDrop={(e) => onDrop(e, day)}
+          onDrop={(e) => onDrop(e, section)}
         >
-          <h2 className="text-xl font-bold">{day} ({getDateForDay(day)})</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">{renderSectionTitle(section)}</h2>
+            {section !== 'New Tasks' && !initialSections.includes(section) && (
+              <Button variant="destructive" onClick={() => deleteSection(section)}>
+                <Trash className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
           <ul>
-            {getTasksForDay(day).map(renderTask)}
+            {getTasksForSection(section).map(renderTask)}
           </ul>
         </div>
       ))}
+
+      <div className="mt-8">
+        <Input
+          type="text"
+          value={newSectionName}
+          onChange={(e) => setNewSectionName(e.target.value)}
+          placeholder="New section name"
+          className="mr-2"
+        />
+        <Button onClick={addSection} className="px-4 py-2">Add Section</Button>
+      </div>
 
       <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
         <DialogTrigger asChild>
