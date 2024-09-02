@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 
 // Placeholder data
 const initialTags = [
@@ -29,8 +29,16 @@ const initialTasks = [
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const TodoList = () => {
-  const [tasks, setTasks] = useState(initialTasks);
-  const [tags, setTags] = useState(initialTags);
+  const [tasks, setTasks] = useState(() => {
+    const storedTasks = localStorage.getItem('tasks');
+    return storedTasks ? JSON.parse(storedTasks) : initialTasks;
+  });
+  
+  const [tags, setTags] = useState(() => {
+    const storedTags = localStorage.getItem('tags');
+    return storedTags ? JSON.parse(storedTags) : initialTags;
+  });
+  
   const [newTask, setNewTask] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -38,6 +46,14 @@ const TodoList = () => {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#000000');
   const [draggedTaskId, setDraggedTaskId] = useState(null);
+
+  useEffect(() => {
+    localStorage.setItem('tasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  useEffect(() => {
+    localStorage.setItem('tags', JSON.stringify(tags));
+  }, [tags]);
 
   const addTask = () => {
     if (newTask.trim() !== '' && selectedTag !== '') {
@@ -79,6 +95,18 @@ const TodoList = () => {
     }
   };
 
+  const deleteTag = (tagId) => {
+    // Remove the tag from the tags list
+    const updatedTags = tags.filter(tag => tag.id !== tagId);
+    setTags(updatedTags);
+
+    // Optionally, remove the tag from any tasks that use it
+    const updatedTasks = tasks.map(task => 
+      task.tag === tagId ? { ...task, tag: null } : task
+    );
+    setTasks(updatedTasks);
+  };
+
   const getDateForDay = (day) => {
     const today = new Date();
     const diff = daysOfWeek.indexOf(day) - today.getDay();
@@ -117,8 +145,8 @@ const TodoList = () => {
   const renderTask = (task) => (
     <li
       key={task.id}
-      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-100' : ''}`}
-      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
+      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-1500' : ''}`}
+      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color}}
       draggable
       onDragStart={(e) => onDragStart(e, task.id)}
     >
@@ -212,12 +240,17 @@ const TodoList = () => {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             {tags.map(tag => (
-              <div key={tag.id} className="flex items-center">
-                <div
-                  className="w-4 h-4 rounded-full mr-2"
-                  style={{ backgroundColor: tag.color }}
-                ></div>
-                <span>{tag.name}</span>
+              <div key={tag.id} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div
+                    className="w-4 h-4 rounded-full mr-2"
+                    style={{ backgroundColor: tag.color }}
+                  ></div>
+                  <span>{tag.name}</span>
+                </div>
+                <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                  <Trash className="h-4 w-4" />
+                </Button>
               </div>
             ))}
             <div className="flex items-center">
