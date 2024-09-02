@@ -1,33 +1,83 @@
+/* Apply background gradient to the html element */
+html {
+  min-height: 100%;
+  background: linear-gradient(
+      to bottom,
+      rgba(var(--background-start-rgb), 0.9),
+      rgba(var(--background-end-rgb), 1)
+    );
+  background-size: cover; /* Ensure the gradient covers the full height */
+}
+
+/* Ensure body takes up full height */
+body {
+  min-height: 100%;
+  margin: 0;
+  color: rgb(var(--foreground-rgb)); /* Set text color */
+}
+
+/* Other styles */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  --background-start-rgb: 245, 247, 250; /* Light blue-gray */
+  --background-end-rgb: 255, 255, 255; /* White */
+  --foreground-rgb: 29, 29, 31; /* Dark charcoal gray */
+
+  --border: 216, 222, 233; /* Soft light blue-gray */
+  --input: 255, 255, 255; /* Pure white */
+  --ring: 59, 130, 246; /* Vibrant blue */
+  --primary: 59, 130, 246; /* Blue */
+  --primary-foreground: 255, 255, 255; /* White */
+  --secondary: 16, 185, 129; /* Teal */
+  --secondary-foreground: 255, 255, 255; /* White */
+  --destructive: 239, 68, 68; /* Soft red */
+  --destructive-foreground: 255, 255, 255; /* White */
+  --muted: 107, 114, 128; /* Cool gray */
+  --muted-foreground: 255, 255, 255; /* White */
+  --accent: 251, 191, 36; /* Warm yellow */
+  --accent-foreground: 29, 29, 31; /* Dark charcoal gray */
+  --popover: 255, 255, 255; /* White */
+  --popover-foreground: 29, 29, 31; /* Dark charcoal gray */
+  --card: 255, 255, 255; /* White */
+  --card-foreground: 29, 29, 31; /* Dark charcoal gray */
+
+  --radius: 0.5rem; /* Default border radius */
 }
 
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
+    --background-start-rgb: 17, 24, 39; /* Deep dark blue-gray */
+    --background-end-rgb: 37, 37, 37; /* Slightly lighter dark gray */
+    --foreground-rgb: 229, 229, 231; /* Light gray */
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+    --border: 60, 60, 60; /* Darker gray */
+    --input: #000000; /* Darker gray */
+    --ring: 128, 90, 213; /* Purple */
+    --primary: 99, 102, 241; /* Indigo */
+    --primary-foreground: 255, 255, 255; /* White */
+    --secondary: 16, 185, 129; /* Teal */
+    --secondary-foreground: 255, 255, 255; /* White */
+    --destructive: 239, 68, 68; /* Soft red */
+    --destructive-foreground: 255, 255, 255; /* White */
+    --muted: 107, 114, 128; /* Cool gray */
+    --muted-foreground: 229, 229, 231; /* Light gray */
+    --accent: 234, 179, 8; /* Warm yellow */
+    --accent-foreground: 29, 29, 31; /* Dark charcoal gray */
+    --popover: 37, 37, 37; /* Dark gray */
+    --popover-foreground: 229, 229, 231; /* Light gray */
+    --card: 37, 37, 37; /* Dark gray */
+    --card-foreground: 229, 229, 231; /* Light gray */
+
+    --radius: 0.5rem; /* Default border radius */
+  }
 }
 
 @layer utilities {
   .text-balance {
-    text-wrap: balance;
+    text-wrap: balance; /* Ensure balanced text wrapping */
   }
 }
