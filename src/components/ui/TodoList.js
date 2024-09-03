@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash } from 'lucide-react';
+import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -40,7 +40,10 @@ const TodoList = () => {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#000000');
   const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [isEditingSections, setIsEditingSections] = useState(false);
+  const [sectionVisibility, setSectionVisibility] = useState({}); // New state to manage section visibility
 
   useEffect(() => {
     setIsMounted(true);
@@ -48,10 +51,12 @@ const TodoList = () => {
       const storedTasks = localStorage.getItem('tasks');
       const storedTags = localStorage.getItem('tags');
       const storedSections = localStorage.getItem('sections');
+      const storedVisibility = localStorage.getItem('sectionVisibility');
 
       if (storedTasks) setTasks(JSON.parse(storedTasks));
       if (storedTags) setTags(JSON.parse(storedTags));
       if (storedSections) setSections(JSON.parse(storedSections));
+      if (storedVisibility) setSectionVisibility(JSON.parse(storedVisibility));
     }
   }, []);
 
@@ -72,6 +77,12 @@ const TodoList = () => {
       localStorage.setItem('sections', JSON.stringify(sections));
     }
   }, [sections, isMounted]);
+
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('sectionVisibility', JSON.stringify(sectionVisibility));
+    }
+  }, [sectionVisibility, isMounted]);
 
   const addTask = () => {
     if (newTask.trim() !== '' && selectedTag !== '') {
@@ -137,6 +148,25 @@ const TodoList = () => {
     setSections(sections.filter(section => section !== sectionName));
   };
 
+  const onDragStartSection = (index) => {
+    setDraggedSectionIndex(index);
+  };
+
+  const onDragOverSection = (e) => {
+    e.preventDefault();
+  };
+
+  const onDropSection = (e, index) => {
+    e.preventDefault();
+    if (draggedSectionIndex !== null) {
+      const newSections = [...sections];
+      const [movedSection] = newSections.splice(draggedSectionIndex, 1);
+      newSections.splice(index, 0, movedSection);
+      setSections(newSections);
+      setDraggedSectionIndex(null);
+    }
+  };
+
   const getTasksForSection = (sectionName) => {
     if (sectionName === 'New Tasks') {
       return tasks.filter(task => task.displayDate === null);
@@ -152,16 +182,12 @@ const TodoList = () => {
     return date.toISOString().split('T')[0];
   };
 
-  const onDragStart = (e, taskId) => {
+  const onDragStartTask = (e, taskId) => {
     setDraggedTaskId(taskId);
     e.dataTransfer.setData('text/plain', taskId);
   };
 
-  const onDragOver = (e) => {
-    e.preventDefault();
-  };
-
-  const onDrop = (e, targetSection) => {
+  const onDropTask = (e, targetSection) => {
     e.preventDefault();
     if (draggedTaskId) {
       const updatedTasks = tasks.map(task => {
@@ -183,13 +209,20 @@ const TodoList = () => {
     return section;
   };
 
+  const toggleSectionVisibility = (sectionName) => {
+    setSectionVisibility(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }));
+  };
+
   const renderTask = (task) => (
     <li
       key={task.id}
       className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-300 text-gray-800' : ''}`}
       style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
-      draggable
-      onDragStart={(e) => onDragStart(e, task.id)}
+      draggable={!isEditingSections}
+      onDragStart={(e) => onDragStartTask(e, task.id)}
     >
       <div className="flex items-center">
         <input
@@ -248,37 +281,53 @@ const TodoList = () => {
         <Button onClick={addTask} className="px-4 py-2">Add</Button>
       </div>
 
-      {sections.map(section => (
+      <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
+        <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
+      </Button>
+
+      {isEditingSections && (
+        <div className="mb-4">
+          <Input
+            type="text"
+            value={newSectionName}
+            onChange={(e) => setNewSectionName(e.target.value)}
+            placeholder="New section name"
+            className="mr-2"
+          />
+          <Button onClick={addSection} className="px-4 py-2">Add Section</Button>
+        </div>
+      )}
+
+      {sections.map((section, index) => (
         <div 
           key={section} 
           className="mb-4"
-          onDragOver={onDragOver}
-          onDrop={(e) => onDrop(e, section)}
+          draggable={isEditingSections}
+          onDragStart={() => onDragStartSection(index)}
+          onDragOver={onDragOverSection}
+          onDrop={(e) => onDropSection(e, index)}
         >
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold">{renderSectionTitle(section)}</h2>
-            {section !== 'New Tasks' && !initialSections.includes(section) && (
-              <Button variant="destructive" onClick={() => deleteSection(section)}>
-                <Trash className="h-4 w-4" />
-              </Button>
-            )}
+          <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSectionVisibility(section)}>
+            <div className="flex items-center">
+              {sectionVisibility[section] ? <ChevronDown className="mr-2" /> : <ChevronRight className="mr-2" />}
+              <h2 className="text-xl font-bold">{renderSectionTitle(section)}</h2>
+            </div>
+            <div className="flex items-center">
+              {isEditingSections && <GripVertical className="cursor-move mr-2" />}
+              {section !== 'New Tasks' && !initialSections.includes(section) && isEditingSections && (
+                <Button variant="destructive" onClick={(e) => { e.stopPropagation(); deleteSection(section); }}>
+                  <Trash className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
-          <ul>
-            {getTasksForSection(section).map(renderTask)}
-          </ul>
+          {sectionVisibility[section] && (
+            <ul>
+              {getTasksForSection(section).map(renderTask)}
+            </ul>
+          )}
         </div>
       ))}
-
-      <div className="mt-8">
-        <Input
-          type="text"
-          value={newSectionName}
-          onChange={(e) => setNewSectionName(e.target.value)}
-          placeholder="New section name"
-          className="mr-2"
-        />
-        <Button onClick={addSection} className="px-4 py-2">Add Section</Button>
-      </div>
 
       <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
         <DialogTrigger asChild>
