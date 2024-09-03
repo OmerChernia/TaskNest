@@ -43,7 +43,7 @@ const TodoList = () => {
   const [draggedSectionIndex, setDraggedSectionIndex] = useState(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isEditingSections, setIsEditingSections] = useState(false);
-  const [sectionVisibility, setSectionVisibility] = useState({}); // New state to manage section visibility
+  const [sectionVisibility, setSectionVisibility] = useState({});
 
   useEffect(() => {
     setIsMounted(true);
@@ -149,7 +149,9 @@ const TodoList = () => {
   };
 
   const onDragStartSection = (index) => {
-    setDraggedSectionIndex(index);
+    if (isEditingSections) {
+      setDraggedSectionIndex(index);
+    }
   };
 
   const onDragOverSection = (e) => {
@@ -158,7 +160,7 @@ const TodoList = () => {
 
   const onDropSection = (e, index) => {
     e.preventDefault();
-    if (draggedSectionIndex !== null) {
+    if (draggedSectionIndex !== null && isEditingSections) {
       const newSections = [...sections];
       const [movedSection] = newSections.splice(draggedSectionIndex, 1);
       newSections.splice(index, 0, movedSection);
@@ -303,9 +305,9 @@ const TodoList = () => {
           key={section} 
           className="mb-4"
           draggable={isEditingSections}
-          onDragStart={() => onDragStartSection(index)}
+          onDragStart={(e) => onDragStartSection(index)}
           onDragOver={onDragOverSection}
-          onDrop={(e) => onDropSection(e, index)}
+          onDrop={(e) => isEditingSections ? onDropSection(e, index) : onDropTask(e, section)}
         >
           <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSectionVisibility(section)}>
             <div className="flex items-center">
@@ -313,7 +315,7 @@ const TodoList = () => {
               <h2 className="text-xl font-bold">{renderSectionTitle(section)}</h2>
             </div>
             <div className="flex items-center">
-              {isEditingSections && <GripVertical className="cursor-move mr-2" />}
+            {isEditingSections && <GripVertical className="cursor-move mr-2" />}
               {section !== 'New Tasks' && !initialSections.includes(section) && isEditingSections && (
                 <Button variant="destructive" onClick={(e) => { e.stopPropagation(); deleteSection(section); }}>
                   <Trash className="h-4 w-4" />
@@ -380,3 +382,5 @@ const TodoList = () => {
 };
 
 export default TodoList;
+
+              
