@@ -28,10 +28,11 @@ const initialTasks = [
 const initialSections = ['New Tasks', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+
 const TodoList = () => {
   const [tasks, setTasks] = useState(initialTasks);
   const [tags, setTags] = useState(initialTags);
-  const [nestedSections, setNestedSections] = useState(initialSections.map(section => ({ id: section, name: section, children: [] })));
+  const [sections, setSections] = useState(initialSections);
   const [newTask, setNewTask] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -40,22 +41,29 @@ const TodoList = () => {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#000000');
   const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [dragOverSection, setDragOverSection] = useState(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isEditingSections, setIsEditingSections] = useState(false);
   const [sectionVisibility, setSectionVisibility] = useState({});
+  const [nestedSections, setNestedSections] = useState(initialSections.map(section => ({ id: section, name: section, children: [] })));
 
   useEffect(() => {
     setIsMounted(true);
-    const storedTasks = localStorage.getItem('tasks');
-    const storedTags = localStorage.getItem('tags');
-    const storedSections = localStorage.getItem('nestedSections');
-    const storedVisibility = localStorage.getItem('sectionVisibility');
-
-    if (storedTasks) setTasks(JSON.parse(storedTasks));
-    if (storedTags) setTags(JSON.parse(storedTags));
-    if (storedSections) setNestedSections(JSON.parse(storedSections));
-    if (storedVisibility) setSectionVisibility(JSON.parse(storedVisibility));
   }, []);
+
+  useEffect(() => {
+    if (isMounted) {
+      const storedTasks = localStorage.getItem('tasks');
+      const storedTags = localStorage.getItem('tags');
+      const storedSections = localStorage.getItem('nestedSections');
+      const storedVisibility = localStorage.getItem('sectionVisibility');
+
+      if (storedTasks) setTasks(JSON.parse(storedTasks));
+      if (storedTags) setTags(JSON.parse(storedTags));
+      if (storedSections) setNestedSections(JSON.parse(storedSections));
+      if (storedVisibility) setSectionVisibility(JSON.parse(storedVisibility));
+    }
+  }, [isMounted]);
 
   useEffect(() => {
     if (isMounted) {
@@ -116,9 +124,9 @@ const TodoList = () => {
   };
 
   const addSection = () => {
-    if (newSectionName.trim() !== '') {
-      const newSection = { id: newSectionName, name: newSectionName, children: [] };
-      setNestedSections([...nestedSections, newSection]);
+    if (newSectionName.trim() !== '' && !sections.includes(newSectionName)) {
+      setSections([...sections, newSectionName]);
+      setNestedSections([...nestedSections, { id: newSectionName, name: newSectionName, children: [] }]);
       setNewSectionName('');
     }
   };
@@ -133,8 +141,14 @@ const TodoList = () => {
     }
   };
 
-  const onDragOverSection = (e) => {
+  const onDragOverSection = (e, sectionId) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevents the event from bubbling up to parent sections
+    setDragOverSection(sectionId);
+};
+
+  const onDragLeaveSection = () => {
+    setDragOverSection(null);
   };
 
   const onDropSection = (e, targetSectionId) => {
@@ -156,6 +170,7 @@ const TodoList = () => {
         return updatedSections;
       });
     }
+    setDragOverSection(null); // Reset the drag over section
   };
 
   const findAndRemoveSection = (sections, sectionId) => {
@@ -204,18 +219,20 @@ const TodoList = () => {
 
   const onDropTask = (e, targetSectionName) => {
     e.preventDefault();
+    e.stopPropagation(); // Prevents the event from bubbling up to parent sections
     const taskId = e.dataTransfer.getData('taskId');
 
     if (taskId) {
-      setTasks(tasks.map(task => {
-        if (task.id === parseInt(taskId)) {
-          return { ...task, displayDate: targetSectionName === 'New Tasks' ? null : getDateForDay(targetSectionName) };
-        }
-        return task;
-      }));
-      setDraggedTaskId(null);
+        setTasks(tasks.map(task => {
+            if (task.id === parseInt(taskId)) {
+                return { ...task, displayDate: targetSectionName === 'New Tasks' ? null : getDateForDay(targetSectionName) };
+            }
+            return task;
+        }));
+        setDraggedTaskId(null);
     }
-  };
+    setDragOverSection(null);
+};
 
   const renderSectionTitle = (sectionName) => {
     if (initialSections.includes(sectionName)) {
@@ -264,10 +281,11 @@ const TodoList = () => {
     return sections.map(section => (
       <div
         key={section.id}
-        className={`mb-4 ml-${level * 4}`}
+        className={`mb-4 ml-${level * 4} ${dragOverSection === section.id ? 'border-2 border-dashed border-blue-500' : ''}`}
         draggable={isEditingSections}
         onDragStart={(e) => onDragStartSection(e, section.id)}
-        onDragOver={onDragOverSection}
+        onDragOver={(e) => onDragOverSection(e, section.id)}
+        onDragLeave={onDragLeaveSection}
         onDrop={(e) => isEditingSections ? onDropSection(e, section.id) : onDropTask(e, section.name)}
       >
         <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSectionVisibility(section.id)}>
