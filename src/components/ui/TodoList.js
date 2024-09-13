@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useHotkeys } from 'react-hotkeys-hook';
 
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
@@ -45,6 +46,7 @@ const TodoList = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dropIndicator, setDropIndicator] = useState(null);
   const sectionsRef = useRef(null);
+  const [selectedTasks, setSelectedTasks] = useState([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -189,9 +191,52 @@ const TodoList = () => {
     return tasks.filter(task => task.displayDate === dayDate);
   };
 
+  const toggleTaskSelection = (taskId, event) => {
+    event.stopPropagation(); // Prevent the click from bubbling up to the background
+
+    if (event.shiftKey) {
+      setSelectedTasks(prev => 
+        prev.includes(taskId) 
+          ? prev.filter(id => id !== taskId)
+          : [...prev, taskId]
+      );
+    } else if (!event.target.closest('button')) {
+      // If not shift-clicking and not clicking a button, clear selection
+      setSelectedTasks([]);
+    }
+  };
+
+  const clearTaskSelection = () => {
+    setSelectedTasks([]);
+  };
+
+  const deleteSelectedTasks = () => {
+    setTasks(prev => prev.filter(task => !selectedTasks.includes(task.id)));
+    setSelectedTasks([]);
+  };
+
+  const duplicateSelectedTasks = () => {
+    const newTasks = tasks.filter(task => selectedTasks.includes(task.id)).map(task => ({
+      ...task,
+      id: Date.now() + Math.random(), // Generate a unique ID
+    }));
+    setTasks(prev => [...prev, ...newTasks]);
+  };
+
+  useHotkeys('delete', deleteSelectedTasks, [selectedTasks]);
+  useHotkeys('cmd+d, ctrl+d', (event) => {
+    event.preventDefault();
+    duplicateSelectedTasks();
+  }, [selectedTasks, tasks]);
+
   const onDragStart = (e, item, type) => {
-    setDraggedItem({ ...item, type });
-    e.dataTransfer.setData('text/plain', JSON.stringify({ ...item, type }));
+    if (type === 'task' && selectedTasks.length > 1 && selectedTasks.includes(item.id)) {
+      setDraggedItem({ type: 'multiTask', taskIds: selectedTasks });
+      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'multiTask', taskIds: selectedTasks }));
+    } else {
+      setDraggedItem({ ...item, type });
+      e.dataTransfer.setData('text/plain', JSON.stringify({ ...item, type }));
+    }
   };
 
   const onDragOver = (e) => {
@@ -237,46 +282,51 @@ const TodoList = () => {
 
     const { sectionId, position } = dropIndicator;
 
-    setNestedSections(prevSections => {
-      const newSections = [...prevSections];
-      let draggedSection;
-      
-      if (draggedItem.type === 'section') {
+    if (draggedItem.type === 'multiTask') {
+      setTasks(prevTasks => prevTasks.map(task => 
+        draggedItem.taskIds.includes(task.id) 
+          ? { ...task, displayDate: sectionId === 'New Tasks' ? null : getDateForDay(sectionId) }
+          : task
+      ));
+    } else if (draggedItem.type === 'task') {
+      // Move the task to the new section
+      setTasks(prevTasks => prevTasks.map(task => 
+        task.id === draggedItem.id ? { ...task, displayDate: sectionId === 'New Tasks' ? null : getDateForDay(sectionId) } : task
+      ));
+    } else if (draggedItem.type === 'section') {
+      setNestedSections(prevSections => {
+        const newSections = [...prevSections];
+        let draggedSection;
+        
         draggedSection = findAndRemoveSection(newSections, draggedItem.id);
-      } else if (draggedItem.type === 'task') {
-        // Move the task to the new section
-        setTasks(prevTasks => prevTasks.map(task => 
-          task.id === draggedItem.id ? { ...task, displayDate: sectionId === 'New Tasks' ? null : getDateForDay(sectionId) } : task
-        ));
-        return newSections; // No need to modify sections for tasks
-      }
 
-      if (draggedSection) {
-        const insertSection = (sections, targetId) => {
-          for (let i = 0; i < sections.length; i++) {
-            if (sections[i].id === targetId) {
-              if (position === 'before') {
-                sections.splice(i, 0, draggedSection);
-              } else if (position === 'after') {
-                sections.splice(i + 1, 0, draggedSection);
-              } else if (position === 'inside') {
-                sections[i].children = sections[i].children || [];
-                sections[i].children.push(draggedSection);
+        if (draggedSection) {
+          const insertSection = (sections, targetId) => {
+            for (let i = 0; i < sections.length; i++) {
+              if (sections[i].id === targetId) {
+                if (position === 'before') {
+                  sections.splice(i, 0, draggedSection);
+                } else if (position === 'after') {
+                  sections.splice(i + 1, 0, draggedSection);
+                } else if (position === 'inside') {
+                  sections[i].children = sections[i].children || [];
+                  sections[i].children.push(draggedSection);
+                }
+                return true;
               }
-              return true;
+              if (sections[i].children && insertSection(sections[i].children, targetId)) {
+                return true;
+              }
             }
-            if (sections[i].children && insertSection(sections[i].children, targetId)) {
-              return true;
-            }
-          }
-          return false;
-        };
+            return false;
+          };
 
-        insertSection(newSections, sectionId);
-      }
-      
-      return newSections;
-    });
+          insertSection(newSections, sectionId);
+        }
+        
+        return newSections;
+      });
+    }
 
     setDraggedItem(null);
     setDropIndicator(null);
@@ -361,147 +411,160 @@ const TodoList = () => {
   const renderTask = (task, sectionId) => (
     <li
       key={task.id}
-      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-300 text-gray-800' : ''}`}
+      className={`mb-2 p-2 border rounded flex items-center justify-between ${
+        task.completed ? 'bg-gray-300 text-gray-800' : ''
+      } ${selectedTasks.includes(task.id) ? 'bg-slate-900 text-white' : ''}`}
       style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
       draggable={!isEditingSections}
       onDragStart={(e) => onDragStart(e, task, 'task')}
-      >
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            checked={task.completed}
-            onChange={() => toggleTaskCompletion(task.id)}
-            className="mr-2"
-          />
-          <span className={task.completed ? 'line-through' : ''}>
-            {task.text} <span className="text-gray-500 text-sm">({tags.find(tag => tag.id === task.tag)?.name})</span>
-          </span>
-        </div>
-        <div className="flex items-center">
-          <span className="text-sm text-gray-500 mr-2">Due: {task.dueDate || 'No Due Date'}</span>
-          <Button onClick={() => deleteTask(task.id)} className="mr-2">
-            <Trash className="h-4 w-4" />
-          </Button>
-        </div>
-      </li>
-    );
-  
-    return (
-      isMounted ? (
-        <div className="p-4">
-          <div className="flex mb-4 items-end">
-            <Input
-              type="text"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              placeholder="Enter new task"
-              className="mr-2"
-            />
-            <Select value={selectedTag} onValueChange={setSelectedTag}>
-              <SelectTrigger className="w-[180px] mr-2">
-                <SelectValue placeholder="Select a tag" />
-              </SelectTrigger>
-              <SelectContent>
-                {tags.map(tag => (
-                  <SelectItem key={tag.id} value={tag.id.toString()}>
-                    <div className="flex items-center">
-                      <div
-                        className="w-3 h-3 rounded-full mr-2"
-                        style={{ backgroundColor: tag.color }}
-                      ></div>
-                      {tag.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="mr-2"
-            />
-            <Button onClick={addTask} className="px-4 py-2">Add</Button>
-          </div>
-  
-          <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
-            <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
-          </Button>
-  
-          {isEditingSections && (
-            <div className="mb-4">
-              <Input
-                type="text"
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                placeholder="New section name"
-                className="mr-2 mb-2"
-              />
-                      <Button onClick={() => addSection('section')} className="px-4 py-2 mr-2">
-          <Plus className="mr-2 h-4 w-4" /> Add Section
-        </Button>
-        <Button onClick={() => addSection('divider')} className="px-4 py-2">
-          <Minus className="mr-2 h-4 w-4" /> Add Divider
+      onClick={(e) => toggleTaskSelection(task.id, e)}
+    >
+      <div className="flex items-center">
+        <input
+          type="checkbox"
+          checked={task.completed}
+          onChange={() => toggleTaskCompletion(task.id)}
+          className="mr-2"
+          onClick={(e) => e.stopPropagation()} // Prevent checkbox from triggering selection
+        />
+        <span className={task.completed ? 'line-through' : ''}>
+          {task.text} <span className={`text-sm ${selectedTasks.includes(task.id) ? 'text-gray-300' : 'text-gray-500'}`}>({tags.find(tag => tag.id === task.tag)?.name})</span>
+        </span>
+      </div>
+      <div className="flex items-center">
+        <span className={`text-sm mr-2 ${selectedTasks.includes(task.id) ? 'text-gray-300' : 'text-gray-500'}`}>Due: {task.dueDate || 'No Due Date'}</span>
+        <Button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="mr-2">
+          <Trash className="h-4 w-4" />
         </Button>
       </div>
-    )}
-    <div
-      ref={sectionsRef}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      {renderNestedSections(nestedSections)}
-    </div>
-    <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
-      <DialogTrigger asChild>
-        <Button className="fixed bottom-4 right-4">
-          <Plus className="mr-2 h-4 w-4" /> Edit Tags
+    </li>
+  );
+  
+  return (
+    isMounted ? (
+      <div className="p-4" onClick={clearTaskSelection}>
+        <div className="flex mb-4 items-end">
+          <Input
+            type="text"
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            placeholder="Enter new task"
+            className="mr-2"
+          />
+          <Select value={selectedTag} onValueChange={setSelectedTag}>
+            <SelectTrigger className="w-[180px] mr-2">
+              <SelectValue placeholder="Select a tag" />
+            </SelectTrigger>
+            <SelectContent>
+              {tags.map(tag => (
+                <SelectItem key={tag.id} value={tag.id.toString()}>
+                  <div className="flex items-center">
+                    <div
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{ backgroundColor: tag.color }}
+                    ></div>
+                    {tag.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="mr-2"
+          />
+          <Button onClick={addTask} className="px-4 py-2">Add</Button>
+        </div>
+
+        <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
+          <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
         </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Edit Tags</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          {tags.map(tag => (
-            <div key={tag.id} className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div
-                  className="w-4 h-4 rounded-full mr-2"
-                  style={{ backgroundColor: tag.color }}
-                ></div>
-                <span>{tag.name}</span>
-              </div>
-              <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
-                <Trash className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-          <div className="flex items-center">
+
+        {isEditingSections && (
+          <div className="mb-4">
             <Input
               type="text"
-              value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              placeholder="New tag name"
-              className="mr-2"
+              value={newSectionName}
+              onChange={(e) => setNewSectionName(e.target.value)}
+              placeholder="New section name"
+              className="mr-2 mb-2"
             />
-            <Input
-              type="color"
-              value={newTagColor}
-              onChange={(e) => setNewTagColor(e.target.value)}
-              className="w-12"
-            />
-            <Button onClick={addTag} className="ml-2">
-              <Plus className="h-4 w-4" />
+            <Button onClick={() => addSection('section')} className="px-4 py-2 mr-2">
+              <Plus className="mr-2 h-4 w-4" /> Add Section
+            </Button>
+            <Button onClick={() => addSection('divider')} className="px-4 py-2">
+              <Minus className="mr-2 h-4 w-4" /> Add Divider
             </Button>
           </div>
+        )}
+
+        {selectedTasks.length > 0 && (
+          <div className="mb-4 p-2 bg-slate-900 text-white border border-slate-700 rounded">
+            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected. 
+            Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
+          </div>
+        )}
+
+        <div
+          ref={sectionsRef}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+        >
+          {renderNestedSections(nestedSections)}
         </div>
-      </DialogContent>
-    </Dialog>
-  </div>
-) : null
-);
+
+        <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="fixed bottom-4 right-4">
+              <Plus className="mr-2 h-4 w-4" /> Edit Tags
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Edit Tags</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              {tags.map(tag => (
+                <div key={tag.id} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div
+                      className="w-4 h-4 rounded-full mr-2"
+                      style={{ backgroundColor: tag.color }}
+                    ></div>
+                    <span>{tag.name}</span>
+                  </div>
+                  <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                    <Trash className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <div className="flex items-center">
+                <Input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder="New tag name"
+                  className="mr-2"
+                />
+                <Input
+                  type="color"
+                  value={newTagColor}
+                  onChange={(e) => setNewTagColor(e.target.value)}
+                  className="w-12"
+                />
+                <Button onClick={addTag} className="ml-2">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    ) : null
+  );
 };
 
 export default TodoList;
