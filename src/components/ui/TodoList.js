@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -28,11 +28,10 @@ const initialTasks = [
 const initialSections = ['New Tasks', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-
 const TodoList = () => {
   const [tasks, setTasks] = useState(initialTasks);
   const [tags, setTags] = useState(initialTags);
-  const [sections, setSections] = useState(initialSections);
+  const [nestedSections, setNestedSections] = useState(initialSections.map(section => ({ id: section, name: section, children: [], type: 'section' })));
   const [newTask, setNewTask] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -40,12 +39,12 @@ const TodoList = () => {
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#000000');
-  const [draggedTaskId, setDraggedTaskId] = useState(null);
-  const [dragOverSection, setDragOverSection] = useState(null);
-  const [isMounted, setIsMounted] = useState(false);
   const [isEditingSections, setIsEditingSections] = useState(false);
   const [sectionVisibility, setSectionVisibility] = useState({});
-  const [nestedSections, setNestedSections] = useState(initialSections.map(section => ({ id: section, name: section, children: [] })));
+  const [isMounted, setIsMounted] = useState(false);
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dropIndicator, setDropIndicator] = useState(null);
+  const sectionsRef = useRef(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -123,54 +122,164 @@ const TodoList = () => {
     setTasks(updatedTasks);
   };
 
-  const addSection = () => {
-    if (newSectionName.trim() !== '' && !sections.includes(newSectionName)) {
-      setSections([...sections, newSectionName]);
-      setNestedSections([...nestedSections, { id: newSectionName, name: newSectionName, children: [] }]);
+  const addSection = (type = 'section') => {
+    if ((type === 'section' && newSectionName.trim() !== '') || type === 'divider') {
+      const newSectionId = Date.now().toString();
+      const newSection = {
+        id: newSectionId,
+        name: type === 'section' ? newSectionName : 'Divider',
+        children: [],
+        type: type
+      };
+
+      setNestedSections(prevSections => [...prevSections, newSection]);
+      setSectionVisibility(prevVisibility => ({
+        ...prevVisibility,
+        [newSectionId]: true
+      }));
+
       setNewSectionName('');
     }
   };
 
   const deleteSection = (sectionId) => {
-    setNestedSections(prevSections => removeSection(prevSections, sectionId));
-  };
-
-  const onDragStartSection = (e, sectionId) => {
-    if (isEditingSections) {
-      e.dataTransfer.setData('sectionId', sectionId);
-    }
-  };
-
-  const onDragOverSection = (e, sectionId) => {
-    e.preventDefault();
-    e.stopPropagation(); // Prevents the event from bubbling up to parent sections
-    setDragOverSection(sectionId);
-};
-
-  const onDragLeaveSection = () => {
-    setDragOverSection(null);
-  };
-
-  const onDropSection = (e, targetSectionId) => {
-    e.preventDefault();
-    const draggedSectionId = e.dataTransfer.getData('sectionId');
-
-    if (draggedSectionId && draggedSectionId !== targetSectionId) {
-      setNestedSections(prevSections => {
-        const updatedSections = [...prevSections];
-        const draggedSection = findAndRemoveSection(updatedSections, draggedSectionId);
-        if (draggedSection) {
-          const targetSection = findSection(updatedSections, targetSectionId);
-          if (targetSection) {
-            targetSection.children.push(draggedSection);
-          } else {
-            updatedSections.push(draggedSection);
+    setNestedSections(prevSections => {
+      const removeSectionRecursive = (sections) => {
+        return sections.filter(section => {
+          if (section.id === sectionId) {
+            return false;
           }
-        }
-        return updatedSections;
-      });
+          if (section.children) {
+            section.children = removeSectionRecursive(section.children);
+          }
+          return true;
+        });
+      };
+      return removeSectionRecursive(prevSections);
+    });
+  };
+
+  const toggleSectionVisibility = (sectionId) => {
+    setSectionVisibility(prevVisibility => ({
+      ...prevVisibility,
+      [sectionId]: !prevVisibility[sectionId]
+    }));
+  };
+
+  const getDateForDay = (day) => {
+    const today = new Date();
+    const diff = daysOfWeek.indexOf(day) - today.getDay();
+    const date = new Date(today.setDate(today.getDate() + diff));
+    return date.toISOString().split('T')[0];
+  };
+
+  const renderSectionTitle = (sectionName) => {
+    if (initialSections.includes(sectionName)) {
+      const date = getDateForDay(sectionName);
+      return sectionName === "New Tasks" ? sectionName : `${sectionName} (${date})`;
     }
-    setDragOverSection(null); // Reset the drag over section
+    return sectionName;
+  };
+
+  const getTasksForSection = (sectionId) => {
+    if (sectionId === 'New Tasks') {
+      return tasks.filter(task => task.displayDate === null);
+    }
+    const dayDate = getDateForDay(sectionId);
+    return tasks.filter(task => task.displayDate === dayDate);
+  };
+
+  const onDragStart = (e, item, type) => {
+    setDraggedItem({ ...item, type });
+    e.dataTransfer.setData('text/plain', JSON.stringify({ ...item, type }));
+  };
+
+  const onDragOver = (e) => {
+    e.preventDefault();
+    if (!draggedItem) return;
+
+    const closestSection = e.target.closest('[data-section-id]');
+    if (!closestSection) return;
+
+    const sectionId = closestSection.getAttribute('data-section-id');
+    const sectionType = closestSection.getAttribute('data-section-type');
+    const rect = closestSection.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+
+    let position;
+    if (y < rect.height * 0.25) {
+      position = 'before';
+    } else if (y > rect.height * 0.75) {
+      position = 'after';
+    } else if (sectionType !== 'divider') {
+      position = 'inside';
+    } else {
+      position = 'after'; // Default to 'after' for dividers
+    }
+
+    // Prevent dropping tasks inside dividers
+    if (draggedItem.type === 'task' && sectionType === 'divider') {
+      position = y < rect.height / 2 ? 'before' : 'after';
+    }
+
+    setDropIndicator({ sectionId, position });
+  };
+
+  const onDragLeave = (e) => {
+    if (!sectionsRef.current.contains(e.relatedTarget)) {
+      setDropIndicator(null);
+    }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    if (!draggedItem || !dropIndicator) return;
+
+    const { sectionId, position } = dropIndicator;
+
+    setNestedSections(prevSections => {
+      const newSections = [...prevSections];
+      let draggedSection;
+      
+      if (draggedItem.type === 'section') {
+        draggedSection = findAndRemoveSection(newSections, draggedItem.id);
+      } else if (draggedItem.type === 'task') {
+        // Move the task to the new section
+        setTasks(prevTasks => prevTasks.map(task => 
+          task.id === draggedItem.id ? { ...task, displayDate: sectionId === 'New Tasks' ? null : getDateForDay(sectionId) } : task
+        ));
+        return newSections; // No need to modify sections for tasks
+      }
+
+      if (draggedSection) {
+        const insertSection = (sections, targetId) => {
+          for (let i = 0; i < sections.length; i++) {
+            if (sections[i].id === targetId) {
+              if (position === 'before') {
+                sections.splice(i, 0, draggedSection);
+              } else if (position === 'after') {
+                sections.splice(i + 1, 0, draggedSection);
+              } else if (position === 'inside') {
+                sections[i].children = sections[i].children || [];
+                sections[i].children.push(draggedSection);
+              }
+              return true;
+            }
+            if (sections[i].children && insertSection(sections[i].children, targetId)) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        insertSection(newSections, sectionId);
+      }
+      
+      return newSections;
+    });
+
+    setDraggedItem(null);
+    setDropIndicator(null);
   };
 
   const findAndRemoveSection = (sections, sectionId) => {
@@ -186,240 +295,213 @@ const TodoList = () => {
     return null;
   };
 
-  const findSection = (sections, sectionId) => {
-    for (const section of sections) {
-      if (section.id === sectionId) return section;
-      if (section.children) {
-        const found = findSection(section.children, sectionId);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  const getTasksForSection = (sectionName) => {
-    if (sectionName === 'New Tasks') {
-      return tasks.filter(task => task.displayDate === null);
-    }
-    const dayDate = getDateForDay(sectionName);
-    return tasks.filter(task => task.displayDate === dayDate);
-  };
-
-  const getDateForDay = (day) => {
-    const today = new Date();
-    const diff = daysOfWeek.indexOf(day) - today.getDay();
-    const date = new Date(today.setDate(today.getDate() + diff));
-    return date.toISOString().split('T')[0];
-  };
-
-  const onDragStartTask = (e, taskId) => {
-    e.dataTransfer.setData('taskId', taskId);
-    setDraggedTaskId(taskId);
-  };
-
-  const onDropTask = (e, targetSectionName) => {
-    e.preventDefault();
-    e.stopPropagation(); // Prevents the event from bubbling up to parent sections
-    const taskId = e.dataTransfer.getData('taskId');
-
-    if (taskId) {
-        setTasks(tasks.map(task => {
-            if (task.id === parseInt(taskId)) {
-                return { ...task, displayDate: targetSectionName === 'New Tasks' ? null : getDateForDay(targetSectionName) };
-            }
-            return task;
-        }));
-        setDraggedTaskId(null);
-    }
-    setDragOverSection(null);
-};
-
-  const renderSectionTitle = (sectionName) => {
-    if (initialSections.includes(sectionName)) {
-      const date = getDateForDay(sectionName);
-      return sectionName === "New Tasks" ? sectionName : `${sectionName} (${date})`;
-    }
-    return sectionName;
-  };
-
-  const toggleSectionVisibility = (sectionId) => {
-    setSectionVisibility(prev => ({
-      ...prev,
-      [sectionId]: !prev[sectionId]
-    }));
-  };
-
-  const renderTask = (task) => (
-    <li
-      key={task.id}
-      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-300 text-gray-800' : ''}`}
-      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
-      draggable={!isEditingSections}
-      onDragStart={(e) => onDragStartTask(e, task.id)}
-    >
-      <div className="flex items-center">
-        <input
-          type="checkbox"
-          checked={task.completed}
-          onChange={() => toggleTaskCompletion(task.id)}
-          className="mr-2"
-        />
-        <span className={task.completed ? 'line-through' : ''}>
-          {task.text} <span className="text-gray-500 text-sm">({tags.find(tag => tag.id === task.tag)?.name})</span>
-        </span>
-      </div>
-      <div className="flex items-center">
-        <span className="text-sm text-gray-500 mr-2">Due: {task.dueDate || 'No Due Date'}</span>
-        <Button onClick={() => deleteTask(task.id)} className="mr-2">
-          <Trash className="h-4 w-4" />
-        </Button>
-      </div>
-    </li>
-  );
-
   const renderNestedSections = (sections, level = 0) => {
-    return sections.map(section => (
-      <div
+    return sections.map((section, index) => (
+      <div 
         key={section.id}
-        className={`mb-4 ml-${level * 4} ${dragOverSection === section.id ? 'border-2 border-dashed border-blue-500' : ''}`}
-        draggable={isEditingSections}
-        onDragStart={(e) => onDragStartSection(e, section.id)}
-        onDragOver={(e) => onDragOverSection(e, section.id)}
-        onDragLeave={onDragLeaveSection}
-        onDrop={(e) => isEditingSections ? onDropSection(e, section.id) : onDropTask(e, section.name)}
+        data-section-id={section.id}
+        data-section-type={section.type}
+        className={`mb-4 ${level > 0 ? `ml-${level * 4}` : ''}`}
       >
-        <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSectionVisibility(section.id)}>
-          <div className="flex items-center">
-            {sectionVisibility[section.id] ? <ChevronDown className="mr-2" /> : <ChevronRight className="mr-2" />}
-            <h2 className="text-xl font-bold">{renderSectionTitle(section.name)}</h2>
-          </div>
-          <div className="flex items-center">
-            {isEditingSections && <GripVertical className="cursor-move mr-2" />}
-            {section.name !== 'New Tasks' && !initialSections.includes(section.name) && isEditingSections && (
-              <Button variant="destructive" onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}>
-                <Trash className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+        {dropIndicator && dropIndicator.sectionId === section.id && dropIndicator.position === 'before' && (
+          <div className="h-1 bg-blue-500 my-2" />
+        )}
+        <div
+          className={`p-2 rounded ${
+            dropIndicator && dropIndicator.sectionId === section.id && dropIndicator.position === 'inside'
+              ? 'border-2 border-dashed border-blue-500'
+              : ''
+          }`}
+          draggable={isEditingSections}
+          onDragStart={(e) => onDragStart(e, section, 'section')}
+        >
+          {section.type === 'divider' ? (
+            <div className="flex items-center justify-between py-2">
+              <hr className="flex-grow border-t border-gray-300" />
+              {isEditingSections && (
+                <Button variant="destructive" onClick={() => deleteSection(section.id)} className="ml-2">
+                  <Trash className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSectionVisibility(section.id)}>
+              <div className="flex items-center">
+                <div className="w-4 h-4 mr-2 flex items-center justify-center">
+                  {sectionVisibility[section.id] ? 
+                    <ChevronDown className="w-4 h-4" /> : 
+                    <ChevronRight className="w-4 h-4" />
+                  }
+                </div>
+                <h2 className="text-xl font-bold">{renderSectionTitle(section.name)}</h2>
+              </div>
+              {isEditingSections && (
+                <Button variant="destructive" onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}>
+                  <Trash className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
-        {sectionVisibility[section.id] && (
-          <>
-            <ul>
-              {getTasksForSection(section.name).map(renderTask)}
+        {section.type !== 'divider' && sectionVisibility[section.id] && (
+          <div className="mt-2 pl-4">
+            <ul className="space-y-2">
+              {getTasksForSection(section.id).map(task => renderTask(task, section.id))}
             </ul>
-            {renderNestedSections(section.children, level + 1)}
-          </>
+            {section.children && renderNestedSections(section.children, level + 1)}
+          </div>
+        )}
+        {dropIndicator && dropIndicator.sectionId === section.id && dropIndicator.position === 'after' && (
+          <div className="h-1 bg-blue-500 my-2" />
         )}
       </div>
     ));
   };
 
-  return (
-    <div className="p-4">
-      <div className="flex mb-4 items-end">
-        <Input
-          type="text"
-          value={newTask}
-          onChange={(e) => setNewTask(e.target.value)}
-          placeholder="Enter new task"
-          className="mr-2"
-        />
-        <Select value={selectedTag} onValueChange={setSelectedTag}>
-          <SelectTrigger className="w-[180px] mr-2">
-            <SelectValue placeholder="Select a tag" />
-          </SelectTrigger>
-          <SelectContent>
-            {tags.map(tag => (
-              <SelectItem key={tag.id} value={tag.id.toString()}>
-                <div className="flex items-center">
-                  <div
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: tag.color }}
-                  ></div>
-                  {tag.name}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className="mr-2"
-        />
-        <Button onClick={addTask} className="px-4 py-2">Add</Button>
-      </div>
-
-      <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
-        <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
-      </Button>
-
-      {isEditingSections && (
-        <div className="mb-4">
-          <Input
-            type="text"
-            value={newSectionName}
-            onChange={(e) => setNewSectionName(e.target.value)}
-            placeholder="New section name"
+  const renderTask = (task, sectionId) => (
+    <li
+      key={task.id}
+      className={`mb-2 p-2 border rounded flex items-center justify-between ${task.completed ? 'bg-gray-300 text-gray-800' : ''}`}
+      style={{ borderColor: tags.find(tag => tag.id === task.tag)?.color }}
+      draggable={!isEditingSections}
+      onDragStart={(e) => onDragStart(e, task, 'task')}
+      >
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            checked={task.completed}
+            onChange={() => toggleTaskCompletion(task.id)}
             className="mr-2"
           />
-          <Button onClick={addSection} className="px-4 py-2">Add Section</Button>
+          <span className={task.completed ? 'line-through' : ''}>
+            {task.text} <span className="text-gray-500 text-sm">({tags.find(tag => tag.id === task.tag)?.name})</span>
+          </span>
         </div>
-      )}
-
-      {renderNestedSections(nestedSections)}
-
-      <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
-        <DialogTrigger asChild>
-          <Button className="fixed bottom-4 right-4">
-            <Plus className="mr-2 h-4 w-4" /> Edit Tags
+        <div className="flex items-center">
+          <span className="text-sm text-gray-500 mr-2">Due: {task.dueDate || 'No Due Date'}</span>
+          <Button onClick={() => deleteTask(task.id)} className="mr-2">
+            <Trash className="h-4 w-4" />
           </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Edit Tags</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            {tags.map(tag => (
-              <div key={tag.id} className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div
-                    className="w-4 h-4 rounded-full mr-2"
-                    style={{ backgroundColor: tag.color }}
-                  ></div>
-                  <span>{tag.name}</span>
-                </div>
-                <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
-                  <Trash className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-            <div className="flex items-center">
+        </div>
+      </li>
+    );
+  
+    return (
+      isMounted ? (
+        <div className="p-4">
+          <div className="flex mb-4 items-end">
+            <Input
+              type="text"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              placeholder="Enter new task"
+              className="mr-2"
+            />
+            <Select value={selectedTag} onValueChange={setSelectedTag}>
+              <SelectTrigger className="w-[180px] mr-2">
+                <SelectValue placeholder="Select a tag" />
+              </SelectTrigger>
+              <SelectContent>
+                {tags.map(tag => (
+                  <SelectItem key={tag.id} value={tag.id.toString()}>
+                    <div className="flex items-center">
+                      <div
+                        className="w-3 h-3 rounded-full mr-2"
+                        style={{ backgroundColor: tag.color }}
+                      ></div>
+                      {tag.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="mr-2"
+            />
+            <Button onClick={addTask} className="px-4 py-2">Add</Button>
+          </div>
+  
+          <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
+            <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
+          </Button>
+  
+          {isEditingSections && (
+            <div className="mb-4">
               <Input
                 type="text"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                placeholder="New tag name"
-                className="mr-2"
+                value={newSectionName}
+                onChange={(e) => setNewSectionName(e.target.value)}
+                placeholder="New section name"
+                className="mr-2 mb-2"
               />
-              <Input
-                type="color"
-                value={newTagColor}
-                onChange={(e) => setNewTagColor(e.target.value)}
-                className="w-12"
-              />
-              <Button onClick={addTag} className="ml-2">
-                <Plus className="h-4 w-4" />
+                      <Button onClick={() => addSection('section')} className="px-4 py-2 mr-2">
+          <Plus className="mr-2 h-4 w-4" /> Add Section
+        </Button>
+        <Button onClick={() => addSection('divider')} className="px-4 py-2">
+          <Minus className="mr-2 h-4 w-4" /> Add Divider
+        </Button>
+      </div>
+    )}
+    <div
+      ref={sectionsRef}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {renderNestedSections(nestedSections)}
+    </div>
+    <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
+      <DialogTrigger asChild>
+        <Button className="fixed bottom-4 right-4">
+          <Plus className="mr-2 h-4 w-4" /> Edit Tags
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Edit Tags</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          {tags.map(tag => (
+            <div key={tag.id} className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div
+                  className="w-4 h-4 rounded-full mr-2"
+                  style={{ backgroundColor: tag.color }}
+                ></div>
+                <span>{tag.name}</span>
+              </div>
+              <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                <Trash className="h-4 w-4" />
               </Button>
             </div>
+          ))}
+          <div className="flex items-center">
+            <Input
+              type="text"
+              value={newTagName}
+              onChange={(e) => setNewTagName(e.target.value)}
+              placeholder="New tag name"
+              className="mr-2"
+            />
+            <Input
+              type="color"
+              value={newTagColor}
+              onChange={(e) => setNewTagColor(e.target.value)}
+              className="w-12"
+            />
+            <Button onClick={addTag} className="ml-2">
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
+) : null
+);
 };
 
 export default TodoList;
-
-//
