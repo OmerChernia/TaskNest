@@ -21,7 +21,16 @@ const initialTags = [
   { id: 3, name: 'Shopping', color: '#0000ff' },
 ];
 
-const initialSections = ['New Tasks', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const initialSections = [
+  { id: 'new-tasks', name: 'New Tasks', type: 'section' },
+  { id: 'sunday', name: 'Sunday', type: 'section' },
+  { id: 'monday', name: 'Monday', type: 'section' },
+  { id: 'tuesday', name: 'Tuesday', type: 'section' },
+  { id: 'wednesday', name: 'Wednesday', type: 'section' },
+  { id: 'thursday', name: 'Thursday', type: 'section' },
+  { id: 'friday', name: 'Friday', type: 'section' },
+  { id: 'saturday', name: 'Saturday', type: 'section' }
+];
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const TodoList = () => {
@@ -45,16 +54,29 @@ const TodoList = () => {
   const [draggedSection, setDraggedSection] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [draggedTask, setDraggedTask] = useState(null);
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
     fetchTasks();
     fetchTags();
     fetchSections();
   }, []);
+
+  const fetchTasks = async () => {
+    try {
+      const response = await fetch('/api/tasks');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch tasks');
+      }
+      const data = await response.json();
+      console.log('Fetched tasks:', data);
+      setTasks(data);
+    } catch (error) {
+      console.error('Error fetching tasks:', error.message);
+    }
+  };
 
   const fetchTags = async () => {
     try {
@@ -110,110 +132,13 @@ const TodoList = () => {
     }
   };
 
-  const fetchTasks = async () => {
-    try {
-      const response = await fetch('/api/tasks');
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch tasks');
-      }
-      const data = await response.json();
-      console.log('Fetched tasks:', data);
-      setTasks(data);
-    } catch (error) {
-      console.error('Error fetching tasks:', error.message);
-    }
-  };
-
-  const addTask = async (newTask) => {
-    try {
-      const selectedTagObject = tags.find(tag => tag.id === selectedTag);
-      const taskToAdd = {
-        ...newTask,
-        tag: selectedTagObject ? {
-          id: selectedTagObject.id,
-          name: selectedTagObject.name,
-          color: selectedTagObject.color
-        } : null,
-        dueDate: dueDate || null,
-        section: 'new-tasks' // Always add new tasks to the "New Tasks" section
-      };
-      console.log('Adding task:', JSON.stringify(taskToAdd));
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskToAdd),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to add task');
-      }
-      const addedTask = await response.json();
-      console.log('Task added successfully:', addedTask);
-      setTasks(prevTasks => [...prevTasks, addedTask]);
-      setNewTask('');
-      setDueDate('');
-      setSelectedTag('');
-    } catch (error) {
-      console.error('Error adding task:', error);
-    }
-  };
-
-  const updateTask = async (updatedTask) => {
-    try {
-      // If the tag is a number, find the corresponding tag object
-      if (typeof updatedTask.tag === 'number') {
-        const tagObject = tags.find(tag => tag.id === updatedTask.tag.toString());
-        if (tagObject) {
-          updatedTask.tag = { id: tagObject.id, name: tagObject.name, color: tagObject.color };
-        } else {
-          updatedTask.tag = null;
-        }
-      }
-
-      const response = await fetch('/api/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTask),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update task');
-      }
-      const data = await response.json();
-      setTasks(prevTasks => prevTasks.map(task => task.id === data.id ? data : task));
-    } catch (error) {
-      console.error('Error updating task:', error);
-      alert('Failed to update task: ' + error.message);
-    }
-  };
-
-  const deleteTask = async (id) => {
-    try {
-      const response = await fetch(`/api/tasks?id=${id}`, { method: 'DELETE' });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete task');
-      }
-      setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      alert('Failed to delete task: ' + error.message);
-    }
-  };
-
-  const toggleTaskCompletion = (taskId) => {
-    setTasks(tasks.map(task =>
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
-  };
-
   const fetchSections = async () => {
     try {
       const response = await fetch('/api/sections');
       if (response.ok) {
         const fetchedSections = await response.json();
         console.log('Fetched sections:', fetchedSections);
-        setNestedSections(fetchedSections.length > 0 ? fetchedSections : initialSections.map(section => ({ id: section, name: section, children: [], type: 'section' })));
+        setNestedSections(fetchedSections.length > 0 ? fetchedSections : initialSections);
         // Initialize sectionVisibility after fetching sections
         setSectionVisibility(() => {
           const initialVisibility = {};
@@ -246,18 +171,13 @@ const TodoList = () => {
   };
 
   const addSection = (type) => {
-    if (type === 'section' && newSectionName.trim() !== '') {
-      const newSection = { id: Date.now().toString(), name: newSectionName, children: [], type: 'section' };
-      const updatedSections = [...nestedSections, newSection];
-      setNestedSections(updatedSections);
-      updateSections(updatedSections);
-      setNewSectionName('');
-    } else if (type === 'divider') {
-      const newDivider = { id: Date.now().toString(), type: 'divider' };
-      const updatedSections = [...nestedSections, newDivider];
-      setNestedSections(updatedSections);
-      updateSections(updatedSections);
-    }
+    const newItem = type === 'divider'
+      ? { id: `divider-${Date.now()}`, type: 'divider' }
+      : { id: String(Date.now()), name: newSectionName || 'New Section', type: 'section', children: [] };
+
+    setNestedSections([...nestedSections, newItem]);
+    updateSections([...nestedSections, newItem]);
+    setNewSectionName('');
   };
 
   const deleteSection = (sectionId) => {
@@ -266,41 +186,11 @@ const TodoList = () => {
     updateSections(updatedSections);
   };
 
-  const moveSectionUp = (index) => {
-    if (index > 0) {
-      const updatedSections = [...nestedSections];
-      [updatedSections[index - 1], updatedSections[index]] = [updatedSections[index], updatedSections[index - 1]];
-      setNestedSections(updatedSections);
-      updateSections(updatedSections);
-    }
-  };
-
-  const moveSectionDown = (index) => {
-    if (index < nestedSections.length - 1) {
-      const updatedSections = [...nestedSections];
-      [updatedSections[index], updatedSections[index + 1]] = [updatedSections[index + 1], updatedSections[index]];
-      setNestedSections(updatedSections);
-      updateSections(updatedSections);
-    }
-  };
-
-  const getDateForDay = (day) => {
-    const today = new Date();
-    const diff = daysOfWeek.indexOf(day) - today.getDay();
-    const date = new Date(today.setDate(today.getDate() + diff));
-    return date.toISOString().split('T')[0];
-  };
-
-  const renderSectionTitle = (sectionName) => {
-    if (initialSections.includes(sectionName)) {
-      const date = getDateForDay(sectionName);
-      return sectionName === "New Tasks" ? sectionName : `${sectionName} (${date})`;
-    }
-    return sectionName;
-  };
-
-  const getTasksForSection = (sectionId) => {
-    return tasks.filter(task => task.section === sectionId);
+  const toggleSectionVisibility = (sectionId) => {
+    setSectionVisibility(prevVisibility => ({
+      ...prevVisibility,
+      [sectionId]: !prevVisibility[sectionId]
+    }));
   };
 
   const handleTaskSelection = (taskId, event) => {
@@ -406,168 +296,263 @@ const TodoList = () => {
     setDropTarget(null);
   };
 
-  const toggleSectionVisibility = (sectionId) => {
-    setSectionVisibility(prevVisibility => ({
-      ...prevVisibility,
-      [sectionId]: !prevVisibility[sectionId]
-    }));
-  };
-
-  const handleDragStart = (e, section, index, level) => {
-    setDraggedSection({ section, index, level });
+  const handleDragStart = (e, section, index) => {
+    setDraggedSection({ section, index });
     e.dataTransfer.setData('text/plain', JSON.stringify(section));
   };
 
-  const handleDragOver = (e, section, index, level) => {
+  const handleDragOver = (e, section, index) => {
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const height = rect.height;
-  
+    
     if (y < height / 3) {
-      setDropIndicator(`${index}-${level}`);
-      setDropTarget(null);
+      setDropIndicator(`${index}-top`);
     } else if (y > (height * 2) / 3) {
-      setDropIndicator(`${index + 1}-${level}`);
-      setDropTarget(null);
+      setDropIndicator(`${index}-bottom`);
     } else {
-      setDropIndicator(null);
-      setDropTarget(section.id);
+      setDropIndicator(`${index}-middle`);
     }
   };
 
   const handleDragLeave = () => {
     setDropIndicator(null);
-    setDropTarget(null);
   };
 
-  const handleDrop = (e, targetSection, targetIndex, targetLevel) => {
+  const handleDrop = (e, targetItem, targetIndex) => {
     e.preventDefault();
     if (!draggedSection) return;
 
     const updatedSections = [...nestedSections];
-    const draggedSectionData = removeSectionFromTree(updatedSections, draggedSection.section.id);
-
-    if (dropTarget) {
-      // Drop inside the section
-      const targetSectionData = findSectionInTree(updatedSections, dropTarget);
-      if (targetSectionData) {
-        targetSectionData.children = targetSectionData.children || [];
-        targetSectionData.children.push(draggedSectionData);
-      }
+    const [removed] = updatedSections.splice(draggedSection.index, 1);
+    
+    if (dropIndicator === `${targetIndex}-middle` && targetItem.type === 'section') {
+      targetItem.children = targetItem.children || [];
+      targetItem.children.push(removed);
     } else {
-      // Drop between sections
-      const targetParent = findParentSection(updatedSections, targetSection.id);
-      const targetArray = targetParent ? targetParent.children : updatedSections;
-      const insertIndex = dropIndicator === `${targetIndex + 1}-${targetLevel}` ? targetIndex + 1 : targetIndex;
-      targetArray.splice(insertIndex, 0, draggedSectionData);
+      const insertIndex = dropIndicator === `${targetIndex}-bottom` ? targetIndex + 1 : targetIndex;
+      updatedSections.splice(insertIndex, 0, removed);
     }
 
     setNestedSections(updatedSections);
     updateSections(updatedSections);
     setDraggedSection(null);
-    setDropTarget(null);
     setDropIndicator(null);
   };
 
-  const removeSectionFromTree = (sections, id) => {
-    for (let i = 0; i < sections.length; i++) {
-      if (sections[i].id === id) {
-        return sections.splice(i, 1)[0];
-      }
-      if (sections[i].children) {
-        const result = removeSectionFromTree(sections[i].children, id);
-        if (result) return result;
-      }
-    }
-    return null;
+  const onTaskDragStart = (e, task) => {
+    setDraggedTask(task);
+    e.dataTransfer.setData('text/plain', JSON.stringify(task));
   };
 
-  const findSectionInTree = (sections, id) => {
-    for (const section of sections) {
-      if (section.id === id) return section;
-      if (section.children) {
-        const result = findSectionInTree(section.children, id);
-        if (result) return result;
-      }
+  const onTaskDragOver = (e, sectionId) => {
+    e.preventDefault();
+    if (draggedTask) {
+      setDropTarget(sectionId);
     }
-    return null;
   };
 
-  const findParentSection = (sections, id, parent = null) => {
-    for (const section of sections) {
-      if (section.id === id) return parent;
-      if (section.children) {
-        const result = findParentSection(section.children, id, section);
-        if (result) return result;
+  const onTaskDrop = async (e, targetSectionId) => {
+    e.preventDefault();
+    if (!draggedTask) return;
+
+    const updatedTask = {
+      ...draggedTask,
+      section: targetSectionId
+    };
+
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedTask),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update task section');
       }
+
+      const updatedTaskFromServer = await response.json();
+      setTasks(prevTasks => prevTasks.map(task => 
+        task.id === updatedTaskFromServer.id ? updatedTaskFromServer : task
+      ));
+    } catch (error) {
+      console.error('Error updating task section:', error);
+    } finally {
+      setDraggedTask(null);
+      setDropTarget(null);
     }
-    return null;
   };
 
   const renderNestedSections = (sections, level = 0) => {
-    return sections.map((section) => {
-      const sectionTasks = getTasksForSection(section.id);
-      console.log(`Rendering section ${section.id} with ${sectionTasks.length} tasks:`, sectionTasks);
-      
-      return (
-        <div key={section.id}>
-          {dropTarget && dropTarget.type === 'line' && dropTarget.sectionId === section.id && dropTarget.position === 'top' && (
-            <div className="h-1 bg-blue-500 my-2"></div>
-          )}
-          <div 
-            className={`mb-4 ${level > 0 ? `ml-${level * 4}` : ''} ${
-              dropTarget && dropTarget.type === 'section' && dropTarget.sectionId === section.id
-                ? 'border-2 border-purple-500 border-dashed'
-                : ''
-            }`}
-            onDragOver={(e) => onDragOver(e, section.id)}
-            onDragLeave={onDragLeave}
-            onDrop={(e) => onDrop(e, section.id)}
-          >
-            {section.type === 'divider' ? (
-              <hr className="my-4 border-t border-gray-300" />
-            ) : (
-              <>
-                <div className="flex items-center mb-2">
-                  <button
-                    onClick={() => toggleSectionVisibility(section.id)}
-                    className="mr-2 focus:outline-none"
-                  >
-                    {sectionVisibility[section.id] ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                  </button>
-                  <h2 className="text-xl font-bold">{renderSectionTitle(section.name)}</h2>
-                </div>
-                {sectionVisibility[section.id] && (
-                  <div>
-                    {sectionTasks.map((task) => (
-                      <TaskItem 
-                        key={task.id} 
-                        task={task} 
-                        onDelete={deleteTask} 
-                        onUpdate={updateTask}
-                        onDragStart={onDragStart}
-                        onSelect={handleTaskSelection}
-                        isSelected={selectedTasks.includes(task.id)}
-                        isUpdating={updatingTaskId === task.id}
-                      />
-                    ))}
-                  </div>
-                )}
-                {section.children && renderNestedSections(section.children, level + 1)}
-              </>
+    return sections.map((item, index) => (
+      <div 
+        key={item.id || `divider-${index}`}
+        draggable={isEditingSections}
+        onDragStart={(e) => isEditingSections && handleDragStart(e, item, index)}
+        onDragOver={(e) => isEditingSections ? handleDragOver(e, item, index) : onTaskDragOver(e, item.id)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => isEditingSections ? handleDrop(e, item, index) : onTaskDrop(e, item.id)}
+        className={`mb-4 ${level > 0 ? `ml-${level * 4}` : ''} ${
+          dropTarget === item.id ? 'border-2 border-blue-500 border-dashed' : ''
+        }`}
+      >
+        {dropIndicator === `${index}-top` && <div className="h-1 bg-blue-500 my-2"></div>}
+        {item.type === 'divider' ? (
+          <div className="flex items-center">
+            {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
+            <hr className="flex-grow border-t border-gray-300" />
+            {isEditingSections && (
+              <Button onClick={() => deleteSection(item.id)} className="ml-2">
+                <Trash className="h-4 w-4" />
+              </Button>
             )}
           </div>
-          {dropTarget && dropTarget.type === 'line' && dropTarget.sectionId === section.id && dropTarget.position === 'bottom' && (
-            <div className="h-1 bg-blue-500 my-2"></div>
-          )}
-        </div>
-      );
-    });
+        ) : (
+          <>
+            <div className="flex items-center mb-2">
+              {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
+              <button
+                onClick={() => toggleSectionVisibility(item.id)}
+                className="mr-2 focus:outline-none"
+              >
+                {sectionVisibility[item.id] ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+              </button>
+              <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
+              {isEditingSections && (
+                <Button onClick={() => deleteSection(item.id)} className="ml-2">
+                  <Trash className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            {sectionVisibility[item.id] && !isEditingSections && (
+              <div>
+                {getTasksForSection(item.id).map((task) => (
+                  <TaskItem 
+                    key={task.id} 
+                    task={task} 
+                    onDelete={deleteTask} 
+                    onUpdate={updateTask}
+                    onDragStart={onTaskDragStart}
+                    onSelect={handleTaskSelection}
+                    isSelected={selectedTasks.includes(task.id)}
+                    isUpdating={updatingTaskId === task.id}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        {item.children && renderNestedSections(item.children, level + 1)}
+        {dropIndicator === `${index}-bottom` && <div className="h-1 bg-blue-500 my-2"></div>}
+      </div>
+    ));
+  };
+
+  const renderSectionTitle = (section) => {
+    if (section.type === 'divider') return null;
+    
+    if (initialSections.some(s => s.name === section.name)) {
+      const date = section.name === "New Tasks" ? "" : ` (${getDateForDay(section.name)})`;
+      return `${section.name}${date}`;
+    }
+    
+    return section.name;
+  };
+
+  const getTasksForSection = (sectionId) => {
+    return tasks.filter(task => 
+      String(task.section) === String(sectionId) || 
+      (!task.section && sectionId === 'new-tasks')
+    );
+  };
+
+  const getDateForDay = (day) => {
+    const today = new Date();
+    const diff = daysOfWeek.indexOf(day) - today.getDay();
+    const date = new Date(today.setDate(today.getDate() + diff));
+    return date.toISOString().split('T')[0];
+  };
+
+  const addTask = async (newTask) => {
+    try {
+      const selectedTagObject = tags.find(tag => tag.id === selectedTag);
+      const taskToAdd = {
+        ...newTask,
+        tag: selectedTagObject ? {
+          id: selectedTagObject.id,
+          name: selectedTagObject.name,
+          color: selectedTagObject.color
+        } : null,
+        dueDate: dueDate || null,
+        section: 'new-tasks' // Always add new tasks to the "New Tasks" section
+      };
+      console.log('Adding task:', JSON.stringify(taskToAdd));
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskToAdd),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to add task');
+      }
+      const addedTask = await response.json();
+      console.log('Task added successfully:', addedTask);
+      setTasks(prevTasks => [...prevTasks, addedTask]);
+      setNewTask('');
+      setDueDate('');
+      setSelectedTag('');
+    } catch (error) {
+      console.error('Error adding task:', error);
+    }
+  };
+
+  const updateTask = async (updatedTask) => {
+    try {
+      // If the tag is a number, find the corresponding tag object
+      if (typeof updatedTask.tag === 'number') {
+        const tagObject = tags.find(tag => tag.id === updatedTask.tag.toString());
+        if (tagObject) {
+          updatedTask.tag = { id: tagObject.id, name: tagObject.name, color: tagObject.color };
+        } else {
+          updatedTask.tag = null;
+        }
+      }
+
+      const response = await fetch('/api/tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedTask),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update task');
+      }
+      const data = await response.json();
+      setTasks(prevTasks => prevTasks.map(task => task.id === data.id ? data : task));
+    } catch (error) {
+      console.error('Error updating task:', error);
+      alert('Failed to update task: ' + error.message);
+    }
+  };
+
+  const deleteTask = async (id) => {
+    try {
+      const response = await fetch(`/api/tasks?id=${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete task');
+      }
+      setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Failed to delete task: ' + error.message);
+    }
   };
 
   return (
@@ -640,13 +625,13 @@ const TodoList = () => {
               value={newSectionName}
               onChange={(e) => setNewSectionName(e.target.value)}
               placeholder="New section name"
-              className="mr-2 mb-2"
+              className="mr-2"
             />
-            <Button onClick={() => addSection('section')} className="px-4 py-2 mr-2">
-              <Plus className="mr-2 h-4 w-4" /> Add Section
+            <Button onClick={() => addSection('section')} className="mr-2">
+              Add Section
             </Button>
-            <Button onClick={() => addSection('divider')} className="px-4 py-2">
-              <Minus className="mr-2 h-4 w-4" /> Add Divider
+            <Button onClick={() => addSection('divider')}>
+              Add Divider
             </Button>
           </div>
         )}

@@ -3,17 +3,19 @@ import { Trash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected, isUpdating }) => {
-  const tagColor = task.tag?.color || 'transparent';
-  const tagName = task.tag?.name || '';
+  const handleDragStart = (e) => {
+    e.stopPropagation(); // Prevent the section from being dragged
+    onDragStart(e, task);
+  };
 
   return (
     <div
       className={`task-item mb-2 p-2 border-2 rounded flex items-center justify-between ${
         task.completed ? 'bg-gray-300 text-gray-800' : ''
       } ${isSelected ? 'bg-slate-900 text-white' : ''} ${isUpdating ? 'opacity-50' : ''}`}
-      style={{ borderColor: tagColor }}
+      style={{ borderColor: task.tag?.color || 'transparent' }}
       draggable
-      onDragStart={(e) => onDragStart(e, task)}
+      onDragStart={handleDragStart}
       onClick={(e) => onSelect(task.id, e)}
     >
       <div className="flex items-center flex-grow">
@@ -26,9 +28,9 @@ const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected,
         />
         <span className={`${task.completed ? 'line-through' : ''} flex-grow`}>
           {task.title}
-          {tagName && (
+          {task.tag?.name && (
             <span className={`ml-2 text-sm ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-              ({tagName})
+              ({task.tag?.name})
             </span>
           )}
         </span>
