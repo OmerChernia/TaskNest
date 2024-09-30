@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight, Minus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -49,12 +49,13 @@ const TodoList = () => {
   const [isMounted, setIsMounted] = useState(false);
   const [draggedItem, setDraggedItem] = useState(null);
   const [dropIndicator, setDropIndicator] = useState(null);
-  const sectionsRef = useRef(null);
   const [selectedTasks, setSelectedTasks] = useState([]);
   const [draggedSection, setDraggedSection] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [draggedTask, setDraggedTask] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [hoveredSectionPath, setHoveredSectionPath] = useState(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -138,12 +139,16 @@ const TodoList = () => {
       if (response.ok) {
         const fetchedSections = await response.json();
         console.log('Fetched sections:', fetchedSections);
-        setNestedSections(fetchedSections.length > 0 ? fetchedSections : initialSections);
-        // Initialize sectionVisibility after fetching sections
+        const sectionsToSet = fetchedSections.length > 0 ? fetchedSections : initialSections;
+        setNestedSections(sectionsToSet);
         setSectionVisibility(() => {
           const initialVisibility = {};
-          fetchedSections.forEach(section => {
+          sectionsToSet.forEach(section => {
             initialVisibility[section.id] = true;
+            if (section.children) {
+              const childVisibilities = getChildSectionVisibilities(section.children);
+              Object.assign(initialVisibility, childVisibilities);
+            }
           });
           return initialVisibility;
         });
@@ -153,6 +158,18 @@ const TodoList = () => {
     } catch (error) {
       console.error('Error fetching sections:', error);
     }
+  };
+
+  const getChildSectionVisibilities = (children) => {
+    const visibilities = {};
+    children.forEach(child => {
+      visibilities[child.id] = true;
+      if (child.children) {
+        const childVisibilities = getChildSectionVisibilities(child.children);
+        Object.assign(visibilities, childVisibilities);
+      }
+    });
+    return visibilities;
   };
 
   const updateSections = async (updatedSections) => {
@@ -175,15 +192,26 @@ const TodoList = () => {
       ? { id: `divider-${Date.now()}`, type: 'divider' }
       : { id: String(Date.now()), name: newSectionName || 'New Section', type: 'section', children: [] };
 
-    setNestedSections([...nestedSections, newItem]);
-    updateSections([...nestedSections, newItem]);
+    const updatedSections = [...nestedSections, newItem];
+    setNestedSections(updatedSections);
+    updateSections(updatedSections);
     setNewSectionName('');
   };
 
   const deleteSection = (sectionId) => {
-    const updatedSections = nestedSections.filter(section => section.id !== sectionId);
+    const updatedSections = removeSectionById([...nestedSections], sectionId);
     setNestedSections(updatedSections);
     updateSections(updatedSections);
+  };
+
+  const removeSectionById = (sections, id) => {
+    return sections.filter(section => {
+      if (section.id === id) return false;
+      if (section.children) {
+        section.children = removeSectionById(section.children, id);
+      }
+      return true;
+    });
   };
 
   const toggleSectionVisibility = (sectionId) => {
@@ -194,18 +222,17 @@ const TodoList = () => {
   };
 
   const handleTaskSelection = (taskId, event) => {
-    event.stopPropagation(); // Prevent the click from bubbling up to the background
+    event.stopPropagation();
 
     if (event.shiftKey) {
-      setSelectedTasks(prev => 
-        prev.includes(taskId) 
+      setSelectedTasks(prev =>
+        prev.includes(taskId)
           ? prev.filter(id => id !== taskId)
           : [...prev, taskId]
       );
     } else if (!event.target.closest('button')) {
-      // If not shift-clicking and not clicking a button, toggle selection
-      setSelectedTasks(prev => 
-        prev.includes(taskId) 
+      setSelectedTasks(prev =>
+        prev.includes(taskId)
           ? prev.filter(id => id !== taskId)
           : [taskId]
       );
@@ -224,7 +251,7 @@ const TodoList = () => {
   const duplicateSelectedTasks = () => {
     const newTasks = tasks.filter(task => selectedTasks.includes(task.id)).map(task => ({
       ...task,
-      id: Date.now() + Math.random(), // Generate a unique ID
+      id: Date.now() + Math.random(),
     }));
     setTasks(prev => [...prev, ...newTasks]);
   };
@@ -235,112 +262,6 @@ const TodoList = () => {
     duplicateSelectedTasks();
   }, [selectedTasks, tasks]);
 
-  const onDragStart = (e, task) => {
-    setDraggedItem(task);
-    e.dataTransfer.setData('text/plain', JSON.stringify(task));
-  };
-
-  const onDragOver = (e, sectionId) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-  
-    if (y < height * 0.25 || y > height * 0.75) {
-      // Near the top or bottom edge of the section
-      setDropTarget({ type: 'line', sectionId, position: y < height * 0.25 ? 'top' : 'bottom' });
-    } else {
-      // In the middle of the section
-      setDropTarget({ type: 'section', sectionId });
-    }
-  };
-
-  const onDragLeave = () => {
-    setDropTarget(null);
-  };
-
-  const onDrop = async (e, targetSectionId) => {
-    e.preventDefault();
-    if (!draggedItem) return;
-
-    setUpdatingTaskId(draggedItem.id);
-
-    const updatedTask = {
-      ...draggedItem,
-      section: targetSectionId
-    };
-
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTask),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update task section');
-      }
-
-      const updatedTaskFromServer = await response.json();
-      setTasks(prevTasks => prevTasks.map(task => 
-        task.id === updatedTaskFromServer.id ? updatedTaskFromServer : task
-      ));
-    } catch (error) {
-      console.error('Error updating task section:', error);
-      // Optionally, you can show an error message to the user here
-    } finally {
-      setUpdatingTaskId(null);
-    }
-
-    setDraggedItem(null);
-    setDropTarget(null);
-  };
-
-  const handleDragStart = (e, section, index) => {
-    setDraggedSection({ section, index });
-    e.dataTransfer.setData('text/plain', JSON.stringify(section));
-  };
-
-  const handleDragOver = (e, section, index) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    
-    if (y < height / 3) {
-      setDropIndicator(`${index}-top`);
-    } else if (y > (height * 2) / 3) {
-      setDropIndicator(`${index}-bottom`);
-    } else {
-      setDropIndicator(`${index}-middle`);
-    }
-  };
-
-  const handleDragLeave = () => {
-    setDropIndicator(null);
-  };
-
-  const handleDrop = (e, targetItem, targetIndex) => {
-    e.preventDefault();
-    if (!draggedSection) return;
-
-    const updatedSections = [...nestedSections];
-    const [removed] = updatedSections.splice(draggedSection.index, 1);
-    
-    if (dropIndicator === `${targetIndex}-middle` && targetItem.type === 'section') {
-      targetItem.children = targetItem.children || [];
-      targetItem.children.push(removed);
-    } else {
-      const insertIndex = dropIndicator === `${targetIndex}-bottom` ? targetIndex + 1 : targetIndex;
-      updatedSections.splice(insertIndex, 0, removed);
-    }
-
-    setNestedSections(updatedSections);
-    updateSections(updatedSections);
-    setDraggedSection(null);
-    setDropIndicator(null);
-  };
-
   const onTaskDragStart = (e, task) => {
     setDraggedTask(task);
     e.dataTransfer.setData('text/plain', JSON.stringify(task));
@@ -348,14 +269,21 @@ const TodoList = () => {
 
   const onTaskDragOver = (e, sectionId) => {
     e.preventDefault();
-    if (draggedTask) {
-      setDropTarget(sectionId);
-    }
+    e.stopPropagation();
+    setDropTarget(sectionId);
+  };
+
+  const onTaskDragLeave = (e) => {
+    e.stopPropagation();
+    setDropTarget(null);
   };
 
   const onTaskDrop = async (e, targetSectionId) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!draggedTask) return;
+
+    setUpdatingTaskId(draggedTask.id);
 
     const updatedTask = {
       ...draggedTask,
@@ -374,100 +302,223 @@ const TodoList = () => {
       }
 
       const updatedTaskFromServer = await response.json();
-      setTasks(prevTasks => prevTasks.map(task => 
+      setTasks(prevTasks => prevTasks.map(task =>
         task.id === updatedTaskFromServer.id ? updatedTaskFromServer : task
       ));
     } catch (error) {
       console.error('Error updating task section:', error);
     } finally {
-      setDraggedTask(null);
-      setDropTarget(null);
+      setUpdatingTaskId(null);
     }
+
+    setDraggedTask(null);
+    setDropTarget(null);
   };
 
-  const renderNestedSections = (sections, level = 0) => {
-    return sections.map((item, index) => (
-      <div 
-        key={item.id || `divider-${index}`}
-        draggable={isEditingSections}
-        onDragStart={(e) => isEditingSections && handleDragStart(e, item, index)}
-        onDragOver={(e) => isEditingSections ? handleDragOver(e, item, index) : onTaskDragOver(e, item.id)}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => isEditingSections ? handleDrop(e, item, index) : onTaskDrop(e, item.id)}
-        className={`mb-4 ${level > 0 ? `ml-${level * 4}` : ''} ${
-          dropTarget === item.id ? 'border-2 border-blue-500 border-dashed' : ''
-        }`}
-      >
-        {dropIndicator === `${index}-top` && <div className="h-1 bg-blue-500 my-2"></div>}
-        {item.type === 'divider' ? (
-          <div className="flex items-center">
-            {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
-            <hr className="flex-grow border-t border-gray-300" />
-            {isEditingSections && (
-              <Button onClick={() => deleteSection(item.id)} className="ml-2">
-                <Trash className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center mb-2">
+  const handleDragStart = (e, section, path) => {
+    e.stopPropagation();
+    setDraggedSection({ section, path });
+    e.dataTransfer.setData('text/plain', JSON.stringify(section));
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e, section, index, path) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+
+    if (y < height / 3) {
+      setDropIndicator(`${path.join('-')}-top`);
+    } else if (y > (height * 2) / 3) {
+      setDropIndicator(`${path.join('-')}-bottom`);
+    } else {
+      setDropIndicator(`${path.join('-')}-middle`);
+    }
+    setHoveredSectionPath(JSON.stringify(path));
+  };
+
+  const handleDragLeave = (e) => {
+    e.stopPropagation();
+    setDropIndicator(null);
+    setHoveredSectionPath(null);
+  };
+
+  const handleDrop = (e, targetItem, targetPath) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedSection) return;
+
+    const updatedSections = JSON.parse(JSON.stringify(nestedSections)); // Deep clone
+
+    const removeSectionAtPath = (sections, path) => {
+      const index = path[0];
+      if (path.length === 1) {
+        return sections.splice(index, 1)[0];
+      } else {
+        const nextPath = path.slice(1);
+        sections[index].children = sections[index].children || [];
+        return removeSectionAtPath(sections[index].children, nextPath);
+      }
+    };
+
+    const insertSectionAtPath = (sections, path, sectionToInsert) => {
+      const index = path[0];
+      if (path.length === 0) {
+        // If path is empty, insert at root level
+        sections.push(sectionToInsert);
+        return;
+      }
+      if (path.length === 1) {
+        if (dropIndicator.endsWith('-middle') && targetItem.type === 'section') {
+          sections[index].children = sections[index].children || [];
+          sections[index].children.push(sectionToInsert);
+        } else {
+          const insertIndex = dropIndicator.endsWith('-bottom') ? index + 1 : index;
+          sections.splice(insertIndex, 0, sectionToInsert);
+        }
+      } else {
+        const nextPath = path.slice(1);
+        sections[index].children = sections[index].children || [];
+        insertSectionAtPath(sections[index].children, nextPath, sectionToInsert);
+      }
+    };
+
+    const removedSection = removeSectionAtPath(updatedSections, draggedSection.path);
+
+    insertSectionAtPath(updatedSections, targetPath, removedSection);
+
+    setNestedSections(updatedSections);
+    updateSections(updatedSections);
+    setDraggedSection(null);
+    setDropIndicator(null);
+    setIsDragging(false);
+    setHoveredSectionPath(null);
+  };
+
+  const renderNestedSections = (sections, level = 0, path = []) => {
+    return sections.map((item, index) => {
+      const currentPath = [...path, index];
+      const isHovered = hoveredSectionPath === JSON.stringify(currentPath);
+
+      return (
+        <div
+          key={item.id || `divider-${index}`}
+          draggable={isEditingSections}
+          onDragStart={(e) => {
+            if (isEditingSections) {
+              handleDragStart(e, item, currentPath);
+            }
+          }}
+          onDragOver={(e) =>
+            isEditingSections
+              ? handleDragOver(e, item, index, currentPath)
+              : onTaskDragOver(e, item.id)
+          }
+          onDragLeave={(e) => {
+            if (isEditingSections) {
+              handleDragLeave(e);
+            } else {
+              onTaskDragLeave(e);
+            }
+          }}
+          onDrop={(e) => {
+            if (isEditingSections) {
+              handleDrop(e, item, currentPath);
+            } else {
+              onTaskDrop(e, item.id);
+            }
+          }}
+          className={`mb-4 ${
+            level > 0 ? `ml-4 pl-4 border-l-2 border-gray-300` : ''
+          } ${
+            dropTarget === item.id && !isEditingSections ? 'border-2 border-blue-500 border-dashed' : ''
+          } ${
+            isEditingSections && isDragging ? 'section-dragging' : ''
+          } ${
+            isHovered && isEditingSections ? 'border border-blue-500' : ''
+          }`}
+        >
+          {dropIndicator === `${currentPath.join('-')}-top` && (
+            <div className="h-1 bg-blue-500 my-2"></div>
+          )}
+          {item.type === 'divider' ? (
+            <div className="flex items-center">
               {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
-              <button
-                onClick={() => toggleSectionVisibility(item.id)}
-                className="mr-2 focus:outline-none"
-              >
-                {sectionVisibility[item.id] ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronRight className="w-4 h-4" />
-                )}
-              </button>
-              <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
+              <hr className="flex-grow border-t border-gray-300" />
               {isEditingSections && (
                 <Button onClick={() => deleteSection(item.id)} className="ml-2">
                   <Trash className="h-4 w-4" />
                 </Button>
               )}
             </div>
-            {sectionVisibility[item.id] && !isEditingSections && (
-              <div>
-                {getTasksForSection(item.id).map((task) => (
-                  <TaskItem 
-                    key={task.id} 
-                    task={task} 
-                    onDelete={deleteTask} 
-                    onUpdate={updateTask}
-                    onDragStart={onTaskDragStart}
-                    onSelect={handleTaskSelection}
-                    isSelected={selectedTasks.includes(task.id)}
-                    isUpdating={updatingTaskId === task.id}
-                  />
-                ))}
+          ) : (
+            <>
+              <div className="flex items-center mb-2">
+                {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
+                <button
+                  onClick={() => toggleSectionVisibility(item.id)}
+                  className="mr-2 focus:outline-none"
+                >
+                  {sectionVisibility[item.id] ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+                <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
+                {isEditingSections && (
+                  <Button onClick={() => deleteSection(item.id)} className="ml-2">
+                    <Trash className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-            )}
-          </>
-        )}
-        {item.children && renderNestedSections(item.children, level + 1)}
-        {dropIndicator === `${index}-bottom` && <div className="h-1 bg-blue-500 my-2"></div>}
-      </div>
-    ));
+              {sectionVisibility[item.id] && (
+                <>
+                  {!isEditingSections && (
+                    <div>
+                      {getTasksForSection(item.id).map((task) => (
+                        <TaskItem
+                          key={task.id}
+                          task={task}
+                          onDelete={deleteTask}
+                          onUpdate={updateTask}
+                          onDragStart={onTaskDragStart}
+                          onSelect={handleTaskSelection}
+                          isSelected={selectedTasks.includes(task.id)}
+                          isUpdating={updatingTaskId === task.id}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {item.children && renderNestedSections(item.children, level + 1, currentPath)}
+                </>
+              )}
+            </>
+          )}
+          {dropIndicator === `${currentPath.join('-')}-bottom` && (
+            <div className="h-1 bg-blue-500 my-2"></div>
+          )}
+        </div>
+      );
+    });
   };
 
   const renderSectionTitle = (section) => {
     if (section.type === 'divider') return null;
-    
+
     if (initialSections.some(s => s.name === section.name)) {
       const date = section.name === "New Tasks" ? "" : ` (${getDateForDay(section.name)})`;
       return `${section.name}${date}`;
     }
-    
+
     return section.name;
   };
 
   const getTasksForSection = (sectionId) => {
-    return tasks.filter(task => 
-      String(task.section) === String(sectionId) || 
+    return tasks.filter(task =>
+      String(task.section) === String(sectionId) ||
       (!task.section && sectionId === 'new-tasks')
     );
   };
@@ -475,7 +526,8 @@ const TodoList = () => {
   const getDateForDay = (day) => {
     const today = new Date();
     const diff = daysOfWeek.indexOf(day) - today.getDay();
-    const date = new Date(today.setDate(today.getDate() + diff));
+    const date = new Date(today);
+    date.setDate(today.getDate() + diff);
     return date.toISOString().split('T')[0];
   };
 
@@ -490,7 +542,7 @@ const TodoList = () => {
           color: selectedTagObject.color
         } : null,
         dueDate: dueDate || null,
-        section: 'new-tasks' // Always add new tasks to the "New Tasks" section
+        section: 'new-tasks'
       };
       console.log('Adding task:', JSON.stringify(taskToAdd));
       const response = await fetch('/api/tasks', {
@@ -514,7 +566,6 @@ const TodoList = () => {
 
   const updateTask = async (updatedTask) => {
     try {
-      // If the tag is a number, find the corresponding tag object
       if (typeof updatedTask.tag === 'number') {
         const tagObject = tags.find(tag => tag.id === updatedTask.tag.toString());
         if (tagObject) {
@@ -555,6 +606,23 @@ const TodoList = () => {
     }
   };
 
+  useEffect(() => {
+    const handleDragEnd = () => {
+      setDraggedSection(null);
+      setDropIndicator(null);
+      setIsDragging(false);
+      setHoveredSectionPath(null);
+      setDraggedTask(null);
+      setDropTarget(null);
+    };
+
+    document.addEventListener('dragend', handleDragEnd);
+
+    return () => {
+      document.removeEventListener('dragend', handleDragEnd);
+    };
+  }, []);
+
   return (
     isMounted ? (
       <div className="p-4" onClick={clearTaskSelection}>
@@ -590,13 +658,13 @@ const TodoList = () => {
             onChange={(e) => setDueDate(e.target.value)}
             className="mr-2"
           />
-          <Button 
+          <Button
             onClick={() => {
-              const taskData = { 
-                title: newTask.trim(), 
-                description: dueDate, 
+              const taskData = {
+                title: newTask.trim(),
+                description: dueDate,
                 tag: selectedTag,
-                dueDate, 
+                dueDate,
                 completed: false,
                 displayDate: null
               };
@@ -607,7 +675,7 @@ const TodoList = () => {
                 return;
               }
               addTask(taskData);
-            }} 
+            }}
             className="px-4 py-2"
           >
             Add
@@ -638,7 +706,7 @@ const TodoList = () => {
 
         {selectedTasks.length > 0 && (
           <div className="mb-4 p-2 bg-slate-900 text-white border border-slate-700 rounded">
-            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected. 
+            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
             Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
           </div>
         )}
