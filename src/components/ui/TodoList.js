@@ -17,7 +17,13 @@ import TaskItem from './TaskItem';
 import { useRouter } from 'next/router';
 import Header from '../Header.js';
 
-
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  };
+};
 
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
@@ -68,6 +74,8 @@ const TodoList = () => {
     fetchTasks();
     fetchTags();
     fetchSections();
+    // This is just for testing. In a real app, set this when the user logs in
+    localStorage.setItem('token', 'your-test-token');
   }, []);
 
   const fetchTasks = async () => {
@@ -107,29 +115,33 @@ const TodoList = () => {
   };
 
   const addTag = async () => {
-  if (newTagName.trim() !== '' && newTagColor !== '') {
     try {
+      const tagData = {
+        name: newTagName,
+        color: newTagColor
+      };
+      console.log('Tag data before adding:', tagData);
+
       const response = await fetch('/api/tags', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Added
-        body: JSON.stringify({ name: newTagName, color: newTagColor }),
+        headers: getAuthHeaders(),
+        body: JSON.stringify(tagData),
       });
-      if (response.ok) {
-        const newTag = await response.json();
-        setTags([...tags, newTag]);
-        setNewTagName('');
-        setNewTagColor('#000000');
-      } else {
+
+      if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add tag');
       }
+
+      const newTag = await response.json();
+      setTags(prevTags => [...prevTags, newTag]);
+      setNewTagName('');
+      setNewTagColor('#000000');
     } catch (error) {
       console.error('Error adding tag:', error);
-      alert('Error adding tag: ' + error.message);
+      alert('Failed to add tag: ' + error.message);
     }
-  }
-};
+  };
 
   const deleteTag = async (tagId) => {
     try {
@@ -555,37 +567,28 @@ const TodoList = () => {
     return date.toISOString().split('T')[0];
   };
 
-  const addTask = async (newTask) => {
+  const addTask = async (taskData) => {
     try {
-      const selectedTagObject = tags.find(tag => tag.id.toString() === selectedTag);
-      const taskToAdd = {
-        ...newTask,
-        tag: selectedTagObject ? {
-          id: selectedTagObject.id,
-          name: selectedTagObject.name,
-          color: selectedTagObject.color
-        } : null,
-        dueDate: dueDate || null,
-        section: 'new-tasks'
-      };
+      console.log('Task data before adding:', taskData);
       const response = await fetch('/api/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Added
-        body: JSON.stringify(taskToAdd),
+        headers: getAuthHeaders(),
+        body: JSON.stringify(taskData),
       });
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add task');
       }
-      const addedTask = await response.json();
-      setTasks(prevTasks => [...prevTasks, addedTask]);
+
+      const newTask = await response.json();
+      setTasks(prevTasks => [...prevTasks, newTask]);
       setNewTask('');
-      setDueDate('');
       setSelectedTag('');
+      setDueDate('');
     } catch (error) {
       console.error('Error adding task:', error);
-      alert('Error adding task: ' + error.message);
+      alert('Failed to add task: ' + error.message);
     }
   };
 

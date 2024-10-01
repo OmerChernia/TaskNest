@@ -11,20 +11,26 @@ const handler = async (req, res) => {
       case 'GET':
         try {
           const tags = await kv.get(`tags:${email}`);
-          console.log('Raw tags data:', tags); // Add this line for debugging
-          if (typeof tags === 'string') {
+          console.log('Raw tags data:', tags);
+          console.log('Type of tags data:', typeof tags);
+
+          let tagsArray = [];
+          if (Array.isArray(tags)) {
+            tagsArray = tags;
+          } else if (typeof tags === 'string') {
             try {
-              const parsedTags = JSON.parse(tags);
-              res.status(200).json(parsedTags);
+              tagsArray = JSON.parse(tags);
             } catch (parseError) {
               console.error('Error parsing tags:', parseError);
-              res.status(200).json([]); // Return an empty array if parsing fails
             }
-          } else if (Array.isArray(tags)) {
-            res.status(200).json(tags);
+          } else if (tags === null || tags === undefined) {
+            console.log('No tags found, returning empty array');
           } else {
-            res.status(200).json([]);
+            console.error('Unexpected type for tags:', typeof tags);
           }
+
+          console.log('Tags array to be sent:', tagsArray);
+          res.status(200).json(tagsArray);
         } catch (error) {
           console.error('Error fetching tags:', error);
           res.status(500).json({ error: `Failed to fetch tags: ${error.message}` });
@@ -33,20 +39,42 @@ const handler = async (req, res) => {
 
       case 'POST':
         try {
-          const { name, color } = req.body;
-          if (!name || !color) {
-            return res.status(400).json({ error: 'Name and color are required' });
+          const newTag = { ...req.body, id: Date.now().toString() };
+          console.log('New tag to be added:', newTag);
+
+          const userTags = await kv.get(`tags:${email}`);
+          console.log('Current tags from KV:', userTags);
+          console.log('Type of userTags:', typeof userTags);
+
+          let tagsArray = [];
+          if (Array.isArray(userTags)) {
+            tagsArray = userTags;
+          } else if (typeof userTags === 'string') {
+            try {
+              tagsArray = JSON.parse(userTags);
+            } catch (parseError) {
+              console.error('Error parsing existing tags:', parseError);
+              tagsArray = [];
+            }
+          } else if (userTags === null || userTags === undefined) {
+            console.log('No existing tags found, initializing empty array');
+          } else {
+            console.error('Unexpected type for userTags:', typeof userTags);
           }
-          const tagsData = await kv.get(`tags:${email}`) || [];
-          console.log('Fetched tags data:', tagsData);
-          console.log('Type of tags data:', typeof tagsData);          const tags = tagsData ? JSON.parse(tagsData) : [];
-          const newTag = { id: Date.now().toString(), name, color };
-          tags.push(newTag);
-          await kv.set(`tags:${email}`, JSON.stringify(tags));         
+
+          console.log('Tags array before adding new tag:', tagsArray);
+
+          tagsArray.push(newTag);
+
+          console.log('Tags array after adding new tag:', tagsArray);
+
+          await kv.set(`tags:${email}`, JSON.stringify(tagsArray));
+          console.log('Tags saved to KV store');
+
           res.status(201).json(newTag);
         } catch (error) {
           console.error('Error adding tag:', error);
-          res.status(500).json({ error: 'Failed to add tag' });
+          res.status(500).json({ error: `Failed to add tag: ${error.message}` });
         }
         break;
 
