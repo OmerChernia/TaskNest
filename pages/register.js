@@ -39,7 +39,7 @@ export default function RegisterPage() {
       <h1 className="text-2xl mb-4">Register</h1>
       <form onSubmit={handleRegister}>
         <input
-          className="border p-2 w-full mb-2"
+          className="border p-2 w-full mb-2 text-gray-700"
           type="email"
           placeholder="Email"
           value={email}
@@ -47,7 +47,7 @@ export default function RegisterPage() {
           required
         />
         <input
-          className="border p-2 w-full mb-2"
+          className="border p-2 w-full mb-2 text-gray-700"
           type="password"
           placeholder="Password"
           value={password}
@@ -55,7 +55,7 @@ export default function RegisterPage() {
           required
         />
         <input
-          className="border p-2 w-full mb-4"
+          className="border p-2 w-full mb-4 text-gray-700"
           type="password"
           placeholder="Confirm Password"
           value={confirmPassword}

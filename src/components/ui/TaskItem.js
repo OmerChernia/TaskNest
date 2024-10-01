@@ -11,9 +11,9 @@ const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected,
   return (
     <div
       className={`task-item mb-2 p-2 border-2 rounded flex items-center justify-between ${
-        task.completed ? 'bg-gray-300 text-gray-800' : ''
+        task.completed ? 'bg-stone-800	 text-zinc-400' : ''
       } ${isSelected ? 'bg-slate-900 text-white' : ''} ${isUpdating ? 'opacity-50' : ''}`}
-      style={{ borderColor: task.tag?.color || 'transparent' }}
+      style={{ borderColor: task.tag?.color}}
       draggable
       onDragStart={handleDragStart}
       onClick={(e) => onSelect(task.id, e)}

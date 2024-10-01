@@ -116,19 +116,43 @@ const handler = async (req, res) => {
       case 'DELETE':
         try {
           const { id } = req.query;
-          if (!id) {
-            return res.status(400).json({ error: 'Task ID is required' });
+          console.log('Attempting to delete task with id:', id);
+
+          const userTasks = await kv.get(`tasks:${email}`);
+          console.log('Current tasks from KV:', userTasks);
+          console.log('Type of userTasks:', typeof userTasks);
+
+          let tasksArray = [];
+          if (Array.isArray(userTasks)) {
+            tasksArray = userTasks;
+          } else if (typeof userTasks === 'string') {
+            try {
+              tasksArray = JSON.parse(userTasks);
+            } catch (parseError) {
+              console.error('Error parsing existing tasks:', parseError);
+              tasksArray = [];
+            }
+          } else if (userTasks === null || userTasks === undefined) {
+            console.log('No existing tasks found');
+            return res.status(404).json({ error: 'Task not found' });
+          } else {
+            console.error('Unexpected type for userTasks:', typeof userTasks);
+            return res.status(500).json({ error: 'Unexpected data format' });
           }
 
-          const userTasks = (await kv.get(`tasks:${email}`)) || '[]';
-          let tasksArray = JSON.parse(userTasks);
-          tasksArray = tasksArray.filter(task => task.id !== id);
+          const updatedTasks = tasksArray.filter(task => task.id !== id);
 
-          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+          if (tasksArray.length === updatedTasks.length) {
+            return res.status(404).json({ error: 'Task not found' });
+          }
+
+          await kv.set(`tasks:${email}`, JSON.stringify(updatedTasks));
+          console.log('Updated tasks saved to KV store');
+
           res.status(200).json({ message: 'Task deleted successfully' });
         } catch (error) {
           console.error('Error deleting task:', error);
-          res.status(500).json({ error: 'Failed to delete task' });
+          res.status(500).json({ error: `Failed to delete task: ${error.message}` });
         }
         break;
 

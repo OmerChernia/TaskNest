@@ -81,17 +81,14 @@ const TodoList = () => {
   const fetchTasks = async () => {
     try {
       const response = await fetch('/api/tasks', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', 
+        headers: getAuthHeaders(),
       });
-      if (!response.ok) {
-        throw new Error('Failed to fetch tasks');
-      }
+      if (!response.ok) throw new Error('Failed to fetch tasks');
       const data = await response.json();
+      console.log('Fetched tasks:', data); // Add this line
       setTasks(data);
     } catch (error) {
-      console.error('Error fetching tasks:', error.message);
+      console.error('Error fetching tasks:', error);
     }
   };
 
@@ -569,11 +566,19 @@ const TodoList = () => {
 
   const addTask = async (taskData) => {
     try {
-      console.log('Task data before adding:', taskData);
+      // If you're selecting a tag by ID, fetch the full tag object
+      const fullTag = tags.find(tag => tag.id === taskData.tag);
+      const newTask = {
+        ...taskData,
+        tag: fullTag, // Use the full tag object instead of just the ID
+        completed: false,
+        id: Date.now().toString(),
+      };
+
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify(taskData),
+        body: JSON.stringify(newTask),
       });
 
       if (!response.ok) {
@@ -581,11 +586,9 @@ const TodoList = () => {
         throw new Error(errorData.error || 'Failed to add task');
       }
 
-      const newTask = await response.json();
-      setTasks(prevTasks => [...prevTasks, newTask]);
-      setNewTask('');
-      setSelectedTag('');
-      setDueDate('');
+      const addedTask = await response.json();
+      setTasks(prevTasks => [...prevTasks, addedTask]);
+      // Reset form fields
     } catch (error) {
       console.error('Error adding task:', error);
       alert('Failed to add task: ' + error.message);
@@ -625,12 +628,14 @@ const TodoList = () => {
     try {
       const response = await fetch(`/api/tasks?id=${id}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: getAuthHeaders(),
       });
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete task');
       }
+
       setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
     } catch (error) {
       console.error('Error deleting task:', error);
