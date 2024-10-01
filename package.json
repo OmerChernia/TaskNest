@@ -15,10 +15,13 @@
     "@tailwindcss/forms": "^0.5.8",
     "@tailwindcss/typography": "^0.5.15",
     "@vercel/kv": "latest",
+    "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "cookie": "^0.6.0",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.438.0",
-    "next": "latest",
+    "next": "^14.2.13",
     "react": "latest",
     "react-dom": "latest",
     "react-hotkeys-hook": "^4.5.1",
@@ -26,11 +29,13 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@types/node": "22.7.4",
+    "@types/react": "18.3.10",
     "autoprefixer": "^10.4.20",
     "eslint": "^8",
     "eslint-config-next": "14.2.7",
-    "postcss": "^8.4.44",
+    "postcss": "^8.4.47",
     "shadcn-ui": "^0.2.3",
-    "tailwindcss": "^3.4.10"
+    "tailwindcss": "^3.4.13"
   }
 }

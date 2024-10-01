@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trash } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from './button';
 
 const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected, isUpdating }) => {
   const handleDragStart = (e) => {

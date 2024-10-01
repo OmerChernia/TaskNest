@@ -1,107 +1,101 @@
+// pages/api/tasks.js
+
 import { kv } from '@vercel/kv';
+import { authenticate } from '../../src/lib/auth';
 
-export default async function handler(req, res) {
-  console.log('API route called with method:', req.method);
-  console.log('Request body:', JSON.stringify(req.body));
+const handler = async (req, res) => {
+  try {
+    const { email } = req.user;
 
-  if (req.method === 'GET') {
-    try {
-      const taskIds = await kv.zrange('tasks_by_date', 0, -1);
-      const tasks = await Promise.all(
-        taskIds.map(async (id) => {
-          const task = await kv.hgetall(`task:${id}`);
-          return task;
-        })
-      );
-      res.status(200).json(tasks);
-    } catch (error) {
-      console.error('Error fetching tasks:', error);
-      res.status(500).json({ error: 'Failed to fetch tasks' });
+    switch (req.method) {
+      case 'GET':
+        try {
+          const tasks = await kv.get(`tasks:${email}`);
+          console.log('Raw tasks data:', tasks); // Add this line for debugging
+          if (typeof tasks === 'string') {
+            try {
+              const parsedTasks = JSON.parse(tasks);
+              res.status(200).json(parsedTasks);
+            } catch (parseError) {
+              console.error('Error parsing tasks:', parseError);
+              res.status(200).json([]); // Return an empty array if parsing fails
+            }
+          } else if (Array.isArray(tasks)) {
+            res.status(200).json(tasks);
+          } else {
+            res.status(200).json([]);
+          }
+        } catch (error) {
+          console.error('Error fetching tasks:', error);
+          res.status(500).json({ error: `Failed to fetch tasks: ${error.message}` });
+        }
+        break;
+
+      case 'POST':
+        try {
+          const newTask = { ...req.body, id: Date.now().toString() };
+          const userTasks = (await kv.get(`tasks:${email}`)) || '[]';
+          const tasksArray = JSON.parse(userTasks);
+          tasksArray.push(newTask);
+          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+          res.status(201).json(newTask);
+        } catch (error) {
+          console.error('Error adding task:', error);
+          res.status(500).json({ error: 'Failed to add task' });
+        }
+        break;
+
+      case 'PUT':
+        try {
+          const { id } = req.body;
+          if (!id) {
+            return res.status(400).json({ error: 'Task ID is required' });
+          }
+
+          const userTasks = (await kv.get(`tasks:${email}`)) || '[]';
+          let tasksArray = JSON.parse(userTasks);
+          const taskIndex = tasksArray.findIndex(task => task.id === id);
+
+          if (taskIndex === -1) {
+            return res.status(404).json({ error: 'Task not found' });
+          }
+
+          tasksArray[taskIndex] = { ...tasksArray[taskIndex], ...req.body };
+          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+          res.status(200).json(tasksArray[taskIndex]);
+        } catch (error) {
+          console.error('Error updating task:', error);
+          res.status(500).json({ error: 'Failed to update task' });
+        }
+        break;
+
+      case 'DELETE':
+        try {
+          const { id } = req.query;
+          if (!id) {
+            return res.status(400).json({ error: 'Task ID is required' });
+          }
+
+          const userTasks = (await kv.get(`tasks:${email}`)) || '[]';
+          let tasksArray = JSON.parse(userTasks);
+          tasksArray = tasksArray.filter(task => task.id !== id);
+
+          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+          res.status(200).json({ message: 'Task deleted successfully' });
+        } catch (error) {
+          console.error('Error deleting task:', error);
+          res.status(500).json({ error: 'Failed to delete task' });
+        }
+        break;
+
+      default:
+        res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
+        res.status(405).end(`Method ${req.method} Not Allowed`);
     }
-  } else if (req.method === 'POST') {
-    try {
-      const { title, description, tag, dueDate, completed, displayDate } = req.body;
-      console.log('Parsed task data:', { title, description, tag, dueDate, completed, displayDate });
-      
-      if (!title) {
-        console.log('Title is missing');
-        return res.status(400).json({ error: 'Title is required' });
-      }
-
-      const taskId = Date.now().toString();
-      const task = {
-        id: taskId,
-        title,
-        description,
-        tag: tag ? { 
-          id: tag.id ? tag.id.toString() : null, 
-          name: tag.name || null, 
-          color: tag.color || null 
-        } : null,
-        dueDate,
-        completed: completed || false,
-        displayDate,
-        createdAt: new Date().toISOString(),
-        section: 'new-tasks', // Add this line
-      };
-
-      console.log('New task object:', task);
-
-      await kv.hset(`task:${taskId}`, task);
-      await kv.zadd('tasks_by_date', { score: Date.now(), member: taskId });
-
-      res.status(201).json(task);
-    } catch (error) {
-      console.error('Error adding task:', error);
-      res.status(500).json({ error: 'Failed to add task' });
-    }
-  } else if (req.method === 'DELETE') {
-    try {
-      const { id } = req.query;
-      if (!id) {
-        return res.status(400).json({ error: 'Task ID is required' });
-      }
-
-      await kv.del(`task:${id}`);
-      await kv.zrem('tasks_by_date', id);
-
-      res.status(200).json({ message: 'Task deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting task:', error);
-      res.status(500).json({ error: 'Failed to delete task' });
-    }
-  } else if (req.method === 'PUT') {
-    try {
-      const { id, ...updatedFields } = req.body;
-      if (!id) {
-        return res.status(400).json({ error: 'Task ID is required' });
-      }
-
-      const existingTask = await kv.hgetall(`task:${id}`);
-      if (!existingTask) {
-        return res.status(404).json({ error: 'Task not found' });
-      }
-
-      const updatedTask = { 
-        ...existingTask, 
-        ...updatedFields,
-        tag: updatedFields.tag ? { 
-          id: updatedFields.tag.id.toString(), 
-          name: updatedFields.tag.name, 
-          color: updatedFields.tag.color 
-        } : null,
-        section: updatedFields.section || existingTask.section // Ensure section is updated
-      };
-
-      await kv.hset(`task:${id}`, updatedTask);
-
-      res.status(200).json(updatedTask);
-    } catch (error) {
-      console.error('Error updating task:', error);
-      res.status(500).json({ error: 'Failed to update task' });
-    }
-  } else {
-    res.setHeader('Allow', ['GET', 'POST', 'DELETE', 'PUT']);
-    res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error('Error in tasks handler:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   }
-}
+};
+
+export default authenticate(handler);

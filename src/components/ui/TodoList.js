@@ -4,16 +4,20 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from "./dialog";
 import { useHotkeys } from 'react-hotkeys-hook';
-import TaskItem from '@/components/ui/TaskItem';
+import TaskItem from './TaskItem';
+import { useRouter } from 'next/router';
+import Header from '../Header.js';
+
+
 
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
@@ -56,6 +60,8 @@ const TodoList = () => {
   const [draggedTask, setDraggedTask] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredSectionPath, setHoveredSectionPath] = useState(null);
+  const router = useRouter();
+
 
   useEffect(() => {
     setIsMounted(true);
@@ -66,13 +72,15 @@ const TodoList = () => {
 
   const fetchTasks = async () => {
     try {
-      const response = await fetch('/api/tasks');
+      const response = await fetch('/api/tasks', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', 
+      });
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch tasks');
+        throw new Error('Failed to fetch tasks');
       }
       const data = await response.json();
-      console.log('Fetched tasks:', data);
       setTasks(data);
     } catch (error) {
       console.error('Error fetching tasks:', error.message);
@@ -81,43 +89,54 @@ const TodoList = () => {
 
   const fetchTags = async () => {
     try {
-      const response = await fetch('/api/tags');
+      const response = await fetch('/api/tags', {
+        method: 'GET',
+        credentials: 'include', // Added
+      });
       if (response.ok) {
         const fetchedTags = await response.json();
         setTags(fetchedTags);
       } else {
-        throw new Error('Failed to fetch tags');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch tags');
       }
     } catch (error) {
       console.error('Error fetching tags:', error);
+      alert('Error fetching tags: ' + error.message);
     }
   };
 
   const addTag = async () => {
-    if (newTagName.trim() !== '' && newTagColor !== '') {
-      try {
-        const response = await fetch('/api/tags', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newTagName, color: newTagColor }),
-        });
-        if (response.ok) {
-          const newTag = await response.json();
-          setTags([...tags, newTag]);
-          setNewTagName('');
-          setNewTagColor('#000000');
-        } else {
-          throw new Error('Failed to add tag');
-        }
-      } catch (error) {
-        console.error('Error adding tag:', error);
+  if (newTagName.trim() !== '' && newTagColor !== '') {
+    try {
+      const response = await fetch('/api/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Added
+        body: JSON.stringify({ name: newTagName, color: newTagColor }),
+      });
+      if (response.ok) {
+        const newTag = await response.json();
+        setTags([...tags, newTag]);
+        setNewTagName('');
+        setNewTagColor('#000000');
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add tag');
       }
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      alert('Error adding tag: ' + error.message);
     }
-  };
+  }
+};
 
   const deleteTag = async (tagId) => {
     try {
-      const response = await fetch(`/api/tags?id=${tagId}`, { method: 'DELETE' });
+      const response = await fetch(`/api/tags?id=${tagId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
       if (response.ok) {
         const updatedTags = tags.filter(tag => tag.id !== tagId);
         setTags(updatedTags);
@@ -135,7 +154,11 @@ const TodoList = () => {
 
   const fetchSections = async () => {
     try {
-      const response = await fetch('/api/sections');
+      const response = await fetch('/api/sections', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
       if (response.ok) {
         const fetchedSections = await response.json();
         console.log('Fetched sections:', fetchedSections);
@@ -177,6 +200,7 @@ const TodoList = () => {
       const response = await fetch('/api/sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ sections: updatedSections }),
       });
       if (!response.ok) {
@@ -533,7 +557,7 @@ const TodoList = () => {
 
   const addTask = async (newTask) => {
     try {
-      const selectedTagObject = tags.find(tag => tag.id === selectedTag);
+      const selectedTagObject = tags.find(tag => tag.id.toString() === selectedTag);
       const taskToAdd = {
         ...newTask,
         tag: selectedTagObject ? {
@@ -544,30 +568,31 @@ const TodoList = () => {
         dueDate: dueDate || null,
         section: 'new-tasks'
       };
-      console.log('Adding task:', JSON.stringify(taskToAdd));
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Added
         body: JSON.stringify(taskToAdd),
       });
       if (!response.ok) {
-        throw new Error('Failed to add task');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add task');
       }
       const addedTask = await response.json();
-      console.log('Task added successfully:', addedTask);
       setTasks(prevTasks => [...prevTasks, addedTask]);
       setNewTask('');
       setDueDate('');
       setSelectedTag('');
     } catch (error) {
       console.error('Error adding task:', error);
+      alert('Error adding task: ' + error.message);
     }
   };
 
   const updateTask = async (updatedTask) => {
     try {
-      if (typeof updatedTask.tag === 'number') {
-        const tagObject = tags.find(tag => tag.id === updatedTask.tag.toString());
+      if (typeof updatedTask.tag === 'number' || typeof updatedTask.tag === 'string') {
+        const tagObject = tags.find(tag => tag.id.toString() === updatedTask.tag.toString());
         if (tagObject) {
           updatedTask.tag = { id: tagObject.id, name: tagObject.name, color: tagObject.color };
         } else {
@@ -578,6 +603,7 @@ const TodoList = () => {
       const response = await fetch('/api/tasks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(updatedTask),
       });
       if (!response.ok) {
@@ -594,7 +620,10 @@ const TodoList = () => {
 
   const deleteTask = async (id) => {
     try {
-      const response = await fetch(`/api/tasks?id=${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/tasks?id=${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete task');
@@ -605,6 +634,25 @@ const TodoList = () => {
       alert('Failed to delete task: ' + error.message);
     }
   };
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (response.ok) {
+        router.push('/login');
+      } else {
+        console.error('Failed to log out');
+        alert('Failed to log out. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error during logout:', error);
+      alert('An error occurred during logout. Please try again.');
+    }
+  };
+
 
   useEffect(() => {
     const handleDragEnd = () => {
@@ -626,6 +674,16 @@ const TodoList = () => {
   return (
     isMounted ? (
       <div className="p-4" onClick={clearTaskSelection}>
+        <Header />
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold">Your Todo List</h1>
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 text-white px-4 py-2 rounded"
+          >
+            Logout
+          </button>
+        </div>
         <div className="flex mb-4 items-end">
           <Input
             type="text"
