@@ -1,16 +1,25 @@
 // pages/api/tags.js
 
 import { kv } from '@vercel/kv';
-import { authenticate } from '../../src/lib/auth';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from './auth/[...nextauth]';
 
-const handler = async (req, res) => {
+export default async function handler(req, res) {
+  const session = await getServerSession(req, res, authOptions);
+
+  if (!session || !session.user?.email) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const email = session.user.email;
+  const tagsKey = `tags:${email}`;
+
   try {
-    const { email } = req.user;
-
     switch (req.method) {
       case 'GET':
         try {
-          const tags = await kv.get(`tags:${email}`);
+          const tags = await kv.get(tagsKey);
           console.log('Raw tags data:', tags);
           console.log('Type of tags data:', typeof tags);
 
@@ -42,7 +51,7 @@ const handler = async (req, res) => {
           const newTag = { ...req.body, id: Date.now().toString() };
           console.log('New tag to be added:', newTag);
 
-          const userTags = await kv.get(`tags:${email}`);
+          let userTags = await kv.get(tagsKey);
           console.log('Current tags from KV:', userTags);
           console.log('Type of userTags:', typeof userTags);
 
@@ -68,7 +77,8 @@ const handler = async (req, res) => {
 
           console.log('Tags array after adding new tag:', tagsArray);
 
-          await kv.set(`tags:${email}`, JSON.stringify(tagsArray));
+          // Store the array directly without stringifying
+          await kv.set(tagsKey, tagsArray);
           console.log('Tags saved to KV store');
 
           res.status(201).json(newTag);
@@ -84,10 +94,31 @@ const handler = async (req, res) => {
           if (!id) {
             return res.status(400).json({ error: 'Tag ID is required' });
           }
-          const tagsData = await kv.get(`tags:${email}`) || '[]';
-          let tags = JSON.parse(tagsData);
-          tags = tags.filter(tag => tag.id !== id);
-          await kv.set(`tags:${email}`, JSON.stringify(tags));
+
+          let tagsData = await kv.get(tagsKey) || [];
+
+          // Handle if tagsData is a string
+          if (typeof tagsData === 'string') {
+            try {
+              tagsData = JSON.parse(tagsData);
+            } catch (error) {
+              console.error('Error parsing tagsData:', error);
+              tagsData = [];
+            }
+          }
+
+          // Ensure tagsData is an array
+          if (!Array.isArray(tagsData)) {
+            tagsData = [];
+          }
+
+          // Filter out the tag with the specified ID
+          const updatedTags = tagsData.filter(tag => tag.id !== id);
+
+          // Update the KV store with the new tags array
+          await kv.set(tagsKey, updatedTags);
+          console.log('Tag deleted successfully');
+
           res.status(200).json({ message: 'Tag deleted successfully' });
         } catch (error) {
           console.error('Error deleting tag:', error);
@@ -103,6 +134,4 @@ const handler = async (req, res) => {
     console.error('Error in tags handler:', error);
     res.status(500).json({ error: `Internal server error: ${error.message}` });
   }
-};
-
-export default authenticate(handler);
+}

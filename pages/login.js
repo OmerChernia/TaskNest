@@ -1,60 +1,79 @@
 // pages/login.js
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSession, signIn } from 'next-auth/react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { data: session } = useSession();
   const router = useRouter();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (session) {
+      router.push('/');
+    } else if (router.query.error) {
+      setError(router.query.error);
+    }
+  }, [session, router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const response = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
+    const email = e.target.email.value;
+    const password = e.target.password.value;
+
+    const result = await signIn('credentials', {
+      redirect: false,
+      email,
+      password,
     });
 
-    if (response.ok) {
-      router.push('/');
+    if (result.error) {
+      setError(result.error);
     } else {
-      const data = await response.json();
-      alert(data.error);
+      router.push('/');
     }
   };
 
   return (
     <div className="p-4 max-w-md mx-auto">
       <h1 className="text-2xl mb-4">Login</h1>
+
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+
       <form onSubmit={handleLogin}>
         <input
           className="border p-2 w-full mb-2 text-gray-700"
           type="email"
+          name="email"
           placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           required
         />
         <input
           className="border p-2 w-full mb-4 text-gray-700"
           type="password"
+          name="password"
           placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <button className="bg-blue-500 text-white p-2 w-full" type="submit">
+        <button className="bg-blue-500 text-white p-2 w-full mb-4" type="submit">
           Login
         </button>
       </form>
+
+      <button
+        onClick={() => signIn('google')}
+        className="bg-red-500 text-white p-2 w-full mb-4"
+      >
+        Sign in with Google
+      </button>
+
       <p className="mt-4 text-center">
         Don't have an account?{' '}
-        <Link href="/register">
-          <span className="text-blue-500 hover:underline cursor-pointer">Register here</span>
+        <Link href="/register" className="text-blue-500 hover:underline">
+          Register here
         </Link>
       </p>
     </div>

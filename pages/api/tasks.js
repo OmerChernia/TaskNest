@@ -1,12 +1,20 @@
 // pages/api/tasks.js
-
 import { kv } from '@vercel/kv';
-import { authenticate } from '../../src/lib/auth';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from './auth/[...nextauth]';
 
-const handler = async (req, res) => {
-  try {
-    const { email } = req.user;
+export default async function handler(req, res) {
+  const session = await getServerSession(req, res, authOptions);
 
+  if (!session || !session.user?.email) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const email = session.user.email;
+
+
+  try{
     switch (req.method) {
       case 'GET':
         try {
@@ -165,5 +173,3 @@ const handler = async (req, res) => {
     res.status(500).json({ error: `Internal server error: ${error.message}` });
   }
 };
-
-export default authenticate(handler);

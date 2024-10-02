@@ -15,15 +15,11 @@ import {
 import { useHotkeys } from 'react-hotkeys-hook';
 import TaskItem from './TaskItem';
 import { useRouter } from 'next/router';
-import Header from '../Header.js';
+import Header from '../header.js';
+import { signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  };
-};
+
 
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
@@ -67,25 +63,28 @@ const TodoList = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredSectionPath, setHoveredSectionPath] = useState(null);
   const router = useRouter();
+  const { data: session, status } = useSession();
+
 
 
   useEffect(() => {
-    setIsMounted(true);
-    fetchTasks();
-    fetchTags();
-    fetchSections();
-    // This is just for testing. In a real app, set this when the user logs in
-    localStorage.setItem('token', 'your-test-token');
-  }, []);
+    if (status === 'authenticated') {
+      fetchTasks();
+      fetchTags();
+      fetchSections();
+      setIsMounted(true); // Add this line
+    }
+  }, [status]);
 
   const fetchTasks = async () => {
     try {
       const response = await fetch('/api/tasks', {
-        headers: getAuthHeaders(),
+        method: 'GET',
+        credentials: 'include', // Include cookies
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
       const data = await response.json();
-      console.log('Fetched tasks:', data); // Add this line
+      console.log('Fetched tasks:', data);
       setTasks(data);
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -96,7 +95,7 @@ const TodoList = () => {
     try {
       const response = await fetch('/api/tags', {
         method: 'GET',
-        credentials: 'include', // Added
+        credentials: 'include', // Include cookies in the request
       });
       if (response.ok) {
         const fetchedTags = await response.json();
@@ -118,18 +117,21 @@ const TodoList = () => {
         color: newTagColor
       };
       console.log('Tag data before adding:', tagData);
-
+  
       const response = await fetch('/api/tags', {
         method: 'POST',
-        headers: getAuthHeaders(),
+        credentials: 'include', // Include cookies in the request
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(tagData),
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add tag');
       }
-
+  
       const newTag = await response.json();
       setTags(prevTags => [...prevTags, newTag]);
       setNewTagName('');
@@ -142,7 +144,7 @@ const TodoList = () => {
 
   const deleteTag = async (tagId) => {
     try {
-      const response = await fetch(`/api/tags?id=${tagId}`, {
+      const response = await fetch(`/api/tags?id=${encodeURIComponent(tagId)}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -158,6 +160,7 @@ const TodoList = () => {
       }
     } catch (error) {
       console.error('Error deleting tag:', error);
+      alert('Failed to delete tag: ' + error.message);
     }
   };
 
@@ -165,8 +168,7 @@ const TodoList = () => {
     try {
       const response = await fetch('/api/sections', {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        credentials: 'include', // Include cookies in the request
       });
       if (response.ok) {
         const fetchedSections = await response.json();
@@ -566,29 +568,34 @@ const TodoList = () => {
 
   const addTask = async (taskData) => {
     try {
-      // If you're selecting a tag by ID, fetch the full tag object
       const fullTag = tags.find(tag => tag.id === taskData.tag);
       const newTask = {
         ...taskData,
-        tag: fullTag, // Use the full tag object instead of just the ID
+        tag: fullTag,
         completed: false,
         id: Date.now().toString(),
       };
-
+  
       const response = await fetch('/api/tasks', {
         method: 'POST',
-        headers: getAuthHeaders(),
+        credentials: 'include', // Include cookies
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(newTask),
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add task');
       }
-
+  
       const addedTask = await response.json();
       setTasks(prevTasks => [...prevTasks, addedTask]);
       // Reset form fields
+      setNewTask('');
+      setSelectedTag('');
+      setDueDate('');
     } catch (error) {
       console.error('Error adding task:', error);
       alert('Failed to add task: ' + error.message);
@@ -599,25 +606,25 @@ const TodoList = () => {
     try {
       if (typeof updatedTask.tag === 'number' || typeof updatedTask.tag === 'string') {
         const tagObject = tags.find(tag => tag.id.toString() === updatedTask.tag.toString());
-        if (tagObject) {
-          updatedTask.tag = { id: tagObject.id, name: tagObject.name, color: tagObject.color };
-        } else {
-          updatedTask.tag = null;
-        }
+        updatedTask.tag = tagObject || null;
       }
-
+  
       const response = await fetch('/api/tasks', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        credentials: 'include', // Include cookies
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(updatedTask),
       });
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to update task');
       }
+  
       const data = await response.json();
-      setTasks(prevTasks => prevTasks.map(task => task.id === data.id ? data : task));
+      setTasks(prevTasks => prevTasks.map(task => (task.id === data.id ? data : task)));
     } catch (error) {
       console.error('Error updating task:', error);
       alert('Failed to update task: ' + error.message);
@@ -628,14 +635,14 @@ const TodoList = () => {
     try {
       const response = await fetch(`/api/tasks?id=${id}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(),
+        credentials: 'include', // Include cookies
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete task');
       }
-
+  
       setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
     } catch (error) {
       console.error('Error deleting task:', error);
@@ -685,10 +692,7 @@ const TodoList = () => {
         <Header />
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold">Your Todo List</h1>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 text-white px-4 py-2 rounded"
-          >
+          <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded">
             Logout
           </button>
         </div>
