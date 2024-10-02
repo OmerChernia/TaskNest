@@ -15,7 +15,7 @@ import {
 import { useHotkeys } from 'react-hotkeys-hook';
 import TaskItem from './TaskItem';
 import { useRouter } from 'next/router';
-import Header from '../header.js';
+import Header from '../Header.js';
 import { signOut } from 'next-auth/react';
 import { useSession } from 'next-auth/react';
 
