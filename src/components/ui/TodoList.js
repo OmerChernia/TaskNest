@@ -85,6 +85,10 @@ const TodoList = () => {
   const [taskDuration, setTaskDuration] = useState('');
   const [customDuration, setCustomDuration] = useState('');
   const [editingTaskId, setEditingTaskId] = useState(null);
+  const accessToken = session?.accessToken;
+  const [showCalendarPopup, setShowCalendarPopup] = useState(false);
+  const [taskToAddToCalendar, setTaskToAddToCalendar] = useState(null);
+  
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -608,6 +612,7 @@ const TodoList = () => {
                           onUpdateTask={handleTaskUpdate}
                           tags={tags}
                           durationOptions={durationOptions}
+                          onAddToGoogleCalendar={addToGoogleCalendar}
                         />
                       ))}
                     </div>
@@ -645,43 +650,76 @@ const TodoList = () => {
 
   const getDateForDay = (day) => {
     const today = new Date();
-    const diff = daysOfWeek.indexOf(day) - today.getDay();
+    const todayDayIndex = today.getDay();
+    const formattedDay = day.charAt(0).toUpperCase() + day.slice(1).toLowerCase();
+    const targetDayIndex = daysOfWeek.indexOf(formattedDay);
+  
+    let diff = targetDayIndex - todayDayIndex;
+  
+    if (diff < 0) {
+      diff += 7;
+    }
+  
     const date = new Date(today);
     date.setDate(today.getDate() + diff);
-    return date.toISOString().split('T')[0];
+  
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are zero-based
+    const dayOfMonth = String(date.getDate()).padStart(2, '0');
+  
+    return `${year}-${month}-${dayOfMonth}`;
   };
 
   const addTask = async (taskData) => {
     try {
-      const fullTag = tags.find(tag => tag.id === taskData.tag);
+      // Find the full tag object based on the selected tag ID
+      const fullTag = tags.find(tag => tag.id.toString() === taskData.tag?.toString());
+      
+      // Prepare the new task data
       const newTask = {
-        ...taskData,
-        tag: fullTag,
+        title: taskData.title,
+        text: taskData.text || '',
+        dueDate: taskData.dueDate || null,
+        tag: fullTag || null,
+        duration: taskData.duration || null,
         completed: false,
-        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
       };
-  
+
+      console.log('Sending new task to server:', newTask);
+
       const response = await fetch('/api/tasks', {
         method: 'POST',
-        credentials: 'include', // Include cookies
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(newTask),
       });
-  
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add task');
       }
-  
+
       const addedTask = await response.json();
+      console.log('Received added task from server:', addedTask);
+
+      // Update the tasks state with the new task
       setTasks(prevTasks => [...prevTasks, addedTask]);
+
+      // Clear form fields
       setNewTask('');
       setSelectedTag('');
       setDueDate('');
       setTaskDuration('');
       setCustomDuration('');
+
+      // Show calendar popup if dueDate exists
+      if (addedTask.dueDate) {
+        setTaskToAddToCalendar(addedTask);
+        setShowCalendarPopup(true);
+      }
     } catch (error) {
       console.error('Error adding task:', error);
       alert('Failed to add task: ' + error.message);
@@ -739,47 +777,177 @@ const TodoList = () => {
     }
   };
 
-  const duplicateTask = async (taskOrTasks) => {
+  const addToGoogleCalendar = async (task) => {
+    if (!task.dueDate) {
+      alert('This task does not have a due date and cannot be added to the calendar.');
+      return;
+    }
+
+    let event = {
+      summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`, // Add tag to the title
+      description: task.description || '',
+      start: {
+        dateTime: new Date(task.dueDate).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      end: {
+        dateTime: new Date(task.dueDate).toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    };
+
+    if (task.duration && task.duration !== 'None') {
+      const durationInMinutes = parseInt(task.duration);
+      if (!isNaN(durationInMinutes)) {
+        const endTime = new Date(new Date(task.dueDate).getTime() + durationInMinutes * 60000);
+        event.end.dateTime = endTime.toISOString();
+      }
+    } else {
+      // Handle tasks without duration as all-day events
+      const startDate = new Date(task.dueDate);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 1);
+
+      event = {
+        summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`, // Add tag to the title
+        description: task.description || '',
+        start: {
+          date: startDate.toISOString().split('T')[0],
+        },
+        end: {
+          date: endDate.toISOString().split('T')[0],
+        },
+      };
+    }
+
     try {
-      const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
-      
-      const duplicatedTasks = tasksToClone.map(task => ({
-        ...task,
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        title: `Copy of ${task.title || 'Untitled Task'}`,
-        completed: false,
-        createdAt: new Date().toISOString(),
-      }));
-
-      console.log('Duplicated tasks before sending:', duplicatedTasks);
-
-      const response = await fetch('/api/tasks', {
+      const response = await fetch('/api/google-calendar', {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(duplicatedTasks),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to duplicate tasks');
+        throw new Error(errorData.error || 'Failed to add event to Google Calendar');
       }
 
-      const addedTasks = await response.json();
-      console.log('Tasks returned from server:', addedTasks);
+      alert('Task added to Google Calendar successfully!');
+    } catch (error) {
+      console.error('Error adding task to Google Calendar:', error);
+      alert('Failed to add task to Google Calendar: ' + error.message);
+    }
+  };
 
-      setTasks(prevTasks => {
-        const newTasks = [...prevTasks, ...addedTasks];
-        console.log('Updated tasks state:', newTasks);
-        return newTasks;
-      });
+  const syncWeekTasksToGoogleCalendar = async () => {
+    // Get tasks from days of the week sections
+    const weekSections = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const tasksToSync = tasks.filter(task => weekSections.includes(task.section));
+  
+    for (const task of tasksToSync) {
+      const sectionDate = getDateForDay(task.section); // Returns 'YYYY-MM-DD'
+  
+      let event;
+  
+      if (task.duration && task.duration !== 'None') {
+        // Handle tasks with duration as timed events
+        const startDateTime = new Date(sectionDate);
+        const durationInMinutes = parseFloat(task.duration) || 60; // Default to 60 minutes
+        const endDateTime = new Date(startDateTime.getTime() + durationInMinutes * 60000);
+  
+        event = {
+          summary: task.title,
+          description: task.description || '',
+          start: {
+            dateTime: startDateTime.toISOString(),
+            timeZone: 'UTC', // Adjust as needed
+          },
+          end: {
+            dateTime: endDateTime.toISOString(),
+            timeZone: 'UTC', // Adjust as needed
+          },
+        };
+      } else {
+        // Handle tasks without duration as all-day events
+        const startDate = new Date(sectionDate);
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 1);
+  
+        event = {
+          summary: task.title,
+          description: task.description || '',
+          start: {
+            date: startDate.toISOString().split('T')[0],
+          },
+          end: {
+            date: endDate.toISOString().split('T')[0],
+          },
+        };
+      }
+  
+      try {
+        const response = await fetch('/api/google-calendar', {
+          method: 'POST',
+          credentials: 'include', // Add this line
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(event),
+        });
+  
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error(`Error adding task "${task.title}" to Google Calendar:`, JSON.stringify(errorData, null, 2));
+          // Optionally handle errors individually
+        }
+      } catch (error) {
+        console.error(`Error adding task "${task.title}" to Google Calendar:`, error);
+        // Optionally handle errors individually
+      }
+    }
+  
+    alert("Week's tasks synced to Google Calendar!");
+  };
+
+  const duplicateTask = async (taskOrTasks) => {
+    try {
+      const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+      
+      for (const task of tasksToClone) {
+        const duplicatedTask = {
+          ...task,
+          title: `${task.title || 'Untitled Task'}`,
+          completed: false,
+          createdAt: new Date().toISOString(),
+        };
+  
+        console.log('Duplicating task:', duplicatedTask);
+  
+        const response = await fetch('/api/tasks', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(duplicatedTask),
+        });
+  
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to duplicate task');
+        }
+  
+        const addedTask = await response.json();
+        console.log('Received duplicated task from server:', addedTask);
+  
+        setTasks(prevTasks => [...prevTasks, addedTask]);
+      }
     } catch (error) {
       console.error('Error duplicating task(s):', error);
       alert('Failed to duplicate task(s): ' + error.message);
     }
   };
+
+  
 
   useEffect(() => {
     const handleDragEnd = () => {
@@ -800,189 +968,216 @@ const TodoList = () => {
 
   return (
     isMounted ? (
-      <div className="p-4" onClick={clearTaskSelection}>
-        <Header />
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold">Your Todo List</h1>
-          <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded">
-            Logout
-          </button>
-        </div>
-        <div className="flex mb-4 items-end">
-          <Input
-            type="text"
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Enter new task"
-            className="mr-2"
-          />
-          <Select value={selectedTag} onValueChange={setSelectedTag}>
-            <SelectTrigger className="w-[180px] mr-2">
-              <SelectValue placeholder="Select a tag" />
-            </SelectTrigger>
-            <SelectContent>
-              {tags.map(tag => (
-                <SelectItem key={tag.id} value={tag.id.toString()}>
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 rounded-full mr-2"
-                      style={{ backgroundColor: tag.color }}
-                    ></div>
-                    {tag.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={taskDuration} onValueChange={handleDurationChange}>
-            <SelectTrigger className="w-[180px] mr-2">
-              <SelectValue placeholder="Select duration" />
-            </SelectTrigger>
-            <SelectContent>
-              {durationOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Custom Duration Input */}
-          {taskDuration === 'custom' && (
+      <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4">
+        <div className="w-full max-w-4xl bg-gray-800 shadow-lg rounded-lg p-6 text-gray-200 relative">
+          <Header />
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-2xl font-bold text-white">Your Todo List</h1>
+            <button
+              onClick={syncWeekTasksToGoogleCalendar}
+              className="flex items-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+              <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
+              Sync Week's Tasks to Google Calendar
+            </button>
+            <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+              Logout
+            </button>
+          </div>
+          <div className="flex mb-4 items-end">
             <Input
               type="text"
-              value={customDuration}
-              onChange={(e) => setCustomDuration(e.target.value)}
-              placeholder="Enter duration in minutes"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              placeholder="Enter new task"
               className="mr-2"
             />
+            <Select value={selectedTag} onValueChange={setSelectedTag}>
+              <SelectTrigger className="w-[180px] mr-2">
+                <SelectValue placeholder="Select a tag" />
+              </SelectTrigger>
+              <SelectContent>
+                {tags.map(tag => (
+                  <SelectItem key={tag.id} value={tag.id.toString()}>
+                    <div className="flex items-center">
+                      <div
+                        className="w-3 h-3 rounded-full mr-2"
+                        style={{ backgroundColor: tag.color }}
+                      ></div>
+                      {tag.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={taskDuration} onValueChange={handleDurationChange}>
+              <SelectTrigger className="w-[180px] mr-2">
+                <SelectValue placeholder="Select duration" />
+              </SelectTrigger>
+              <SelectContent>
+                {durationOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Custom Duration Input */}
+            {taskDuration === 'custom' && (
+              <Input
+                type="text"
+                value={customDuration}
+                onChange={(e) => setCustomDuration(e.target.value)}
+                placeholder="Enter duration in minutes"
+                className="mr-2"
+              />
+            )}
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="mr-2"
+            />
+            <Button
+              onClick={() => {
+                const durationValue = taskDuration === 'custom' ? customDuration : (taskDuration || 'None');
+                const taskData = {
+                  title: newTask.trim(),
+                  tag: selectedTag,
+                  dueDate,
+                  completed: false,
+                  displayDate: null,
+                  duration: durationValue,
+                };
+                console.log('Task data before adding:', JSON.stringify(taskData));
+                if (!taskData.title) {
+                  console.error('Task title is empty');
+                  alert('Please enter a task title');
+                  return;
+                }
+                addTask(taskData);
+              }}
+              className="px-4 py-2"
+            >
+              Add
+            </Button>
+          </div>
+
+          {isEditingSections && (
+            <div className="mb-4">
+              <Input
+                type="text"
+                value={newSectionName}
+                onChange={(e) => setNewSectionName(e.target.value)}
+                placeholder="New section name"
+                className="mr-2"
+              />
+              <Button onClick={() => addSection('section')} className="mr-2">
+                Add Section
+              </Button>
+              <Button onClick={() => addSection('divider')}>
+                Add Divider
+              </Button>
+            </div>
           )}
-          <Input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="mr-2"
-          />
-          <Button
-            onClick={() => {
-              const durationValue = taskDuration === 'custom' ? customDuration : taskDuration;
-              const taskData = {
-                title: newTask.trim(),
-                description: dueDate,
-                tag: selectedTag,
-                dueDate,
-                completed: false,
-                displayDate: null,
-                duration: durationValue,
-              };
-              console.log('Task data before adding:', JSON.stringify(taskData));
-              if (!taskData.title) {
-                console.error('Task title is empty');
-                alert('Please enter a task title');
-                return;
-              }
-              if (!taskData.duration) {
-                console.error('Task duration is empty');
-                alert('Please select a task duration');
-                return;
-              }
-              addTask(taskData);
-            }}
-            className="px-4 py-2"
-          >
-            Add
-          </Button>
-        </div>
 
-        <Button onClick={() => setIsEditingSections(!isEditingSections)} className="mb-4">
-          <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing Sections' : 'Edit Sections'}
-        </Button>
-
-        {isEditingSections && (
-          <div className="mb-4">
-            <Input
-              type="text"
-              value={newSectionName}
-              onChange={(e) => setNewSectionName(e.target.value)}
-              placeholder="New section name"
-              className="mr-2"
-            />
-            <Button onClick={() => addSection('section')} className="mr-2">
-              Add Section
+          {selectedTasks.length > 0 && (
+            <div className="mb-4 p-2 bg-slate-900 text-white border border-slate-700 rounded">
+              <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
+              Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
+            </div>
+          )}
+          {selectedTasks.length === 1 && (
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingTaskId(selectedTasks[0]);
+              }}
+              className="mb-4"
+            >
+              Update Task
             </Button>
-            <Button onClick={() => addSection('divider')}>
-              Add Divider
-            </Button>
+          )}
+          <div className="mt-4">
+            {renderNestedSections(nestedSections)}
           </div>
-        )}
-
-        {selectedTasks.length > 0 && (
-          <div className="mb-4 p-2 bg-slate-900 text-white border border-slate-700 rounded">
-            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
-            Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
-          </div>
-        )}
-        {selectedTasks.length === 1 && (
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingTaskId(selectedTasks[0]);
-            }}
-            className="mb-4"
-          >
-            Update Task
-          </Button>
-        )}
-        <div className="mt-4">
-          {renderNestedSections(nestedSections)}
-        </div>
-
-        <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
-          <DialogTrigger asChild>
-            <Button className="fixed bottom-4 right-4">
-              <Plus className="mr-2 h-4 w-4" /> Edit Tags
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Edit Tags</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              {tags.map(tag => (
-                <div key={tag.id} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div
-                      className="w-4 h-4 rounded-full mr-2"
-                      style={{ backgroundColor: tag.color }}
-                    ></div>
-                    <span>{tag.name}</span>
-                  </div>
-                  <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
-                    <Trash className="h-4 w-4" />
+          {showCalendarPopup && (
+          <Dialog open={showCalendarPopup} onOpenChange={setShowCalendarPopup}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Task to Google Calendar</DialogTitle>
+              </DialogHeader>
+              <div className="py-4">
+                <p>Do you want to add this task to Google Calendar?</p>
+                <div className="flex justify-end mt-4">
+                  <Button onClick={() => setShowCalendarPopup(false)} className="mr-2">
+                    No
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      addToGoogleCalendar(taskToAddToCalendar);
+                      setShowCalendarPopup(false);
+                    }}
+                  >
+                    Yes
                   </Button>
                 </div>
-              ))}
-              <div className="flex items-center">
-                <Input
-                  type="text"
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  placeholder="New tag name"
-                  className="mr-2"
-                />
-                <Input
-                  type="color"
-                  value={newTagColor}
-                  onChange={(e) => setNewTagColor(e.target.value)}
-                  className="w-12"
-                />
-                <Button onClick={addTag} className="ml-2">
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        )}
+          <div className="fixed bottom-4 right-4 flex space-x-2">
+            <Button onClick={() => setIsEditingSections(!isEditingSections)}>
+              <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
+            </Button>
+            <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" /> Edit Tags
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Edit Tags</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  {tags.map(tag => (
+                    <div key={tag.id} className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div
+                          className="w-4 h-4 rounded-full mr-2"
+                          style={{ backgroundColor: tag.color }}
+                        ></div>
+                        <span>{tag.name}</span>
+                      </div>
+                      <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div className="flex items-center">
+                    <Input
+                      type="text"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      placeholder="New tag name"
+                      className="mr-2"
+                    />
+                    <Input
+                      type="color"
+                      value={newTagColor}
+                      onChange={(e) => setNewTagColor(e.target.value)}
+                      className="w-12"
+                    />
+                    <Button onClick={addTag} className="ml-2">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
       </div>
     ) : null
   );

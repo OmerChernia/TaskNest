@@ -11,6 +11,12 @@ export const authOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      authorization: {
+        params: {
+          // Include the Google Calendar scope
+          scope: 'openid email profile https://www.googleapis.com/auth/calendar',
+        },
+      },
     }),
     CredentialsProvider({
       name: 'Credentials',
@@ -41,6 +47,36 @@ export const authOptions = {
   pages: {
     signIn: '/login',
     error: '/login',
+  },
+  callbacks: {
+    async jwt({ token, user, account }) {
+      if (account && account.provider === 'google') {
+        // Store the access and refresh tokens for Google account
+        if (account.access_token) {
+          token.accessToken = account.access_token;
+          token.refreshToken = account.refresh_token;
+          token.accessTokenExpires = account.expires_at * 1000;
+        }
+      } else if (user) {
+        // For Credentials provider
+        token.email = user.email;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      session.user = session.user || {};
+      if (token.email) {
+        // For Credentials provider
+        session.user.email = token.email;
+      }
+      if (token.accessToken) {
+        // For Google provider
+        session.accessToken = token.accessToken;
+        session.refreshToken = token.refreshToken;
+        session.accessTokenExpires = token.accessTokenExpires;
+      }
+      return session;
+    },
   },
 };
 

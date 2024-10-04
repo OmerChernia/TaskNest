@@ -12,13 +12,6 @@ const Header = () => {
     router.push('/login');
   };
 
-  return (
-    <header>
-      {session && (
-        <button onClick={handleLogout}>Logout</button>
-      )}
-    </header>
-  );
 };
 
 export default Header;
