@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Trash } from 'lucide-react';
+import { Trash, Calendar } from 'lucide-react';
 import { Button } from './button';
-import { Input } from '@/components/ui/input'; // Adjust the path as needed
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select'; // Add this if you use Select components
+import { Input } from '@/components/ui/input';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select';
 
 function formatDuration(duration) {
   const mins = parseFloat(duration);
@@ -28,21 +28,22 @@ const TaskItem = ({
   onUpdateTask,
   tags,
   durationOptions,
+  onAddToGoogleCalendar,
 }) => {
-  const [editedTitle, setEditedTitle] = useState(task.title);
+  const [editedTitle, setEditedTitle] = useState(task.title || '');
   const [editedTag, setEditedTag] = useState(task.tag?.id || '');
   const [editedDuration, setEditedDuration] = useState(task.duration || '');
   const [editedCustomDuration, setEditedCustomDuration] = useState('');
   const [editedDueDate, setEditedDueDate] = useState(task.dueDate || '');
 
   const handleDurationChange = (value) => {
-  setEditedDuration(value);
-  if (value !== 'custom') {
-    setEditedCustomDuration('');
+    setEditedDuration(value);
+    if (value !== 'custom') {
+      setEditedCustomDuration('');
     }
   };
 
-  const handleDragStart = (e) => {
+  const handleDragStartLocal = (e) => {
     e.stopPropagation(); // Prevent the section from being dragged
     onDragStart(e, task);
   };
@@ -52,9 +53,9 @@ const TaskItem = ({
       className={`task-item mb-2 p-2 border-2 rounded flex flex-col ${
         task.completed ? 'bg-stone-800 text-zinc-400' : ''
       } ${isSelected ? 'bg-slate-900 text-white' : ''} ${isUpdating ? 'opacity-50' : ''}`}
-      style={{ borderColor: task.tag?.color }}
+      style={{ borderColor: task.tag?.color || '#000000' }}
       draggable={!isEditing}
-      onDragStart={!isEditing ? handleDragStart : undefined}
+      onDragStart={!isEditing ? handleDragStartLocal : undefined}
       onClick={(e) => onSelect(task.id, e)}
     >
       {isEditing ? (
@@ -86,7 +87,7 @@ const TaskItem = ({
               </SelectTrigger>
               <SelectContent>
                 {tags.map(tag => (
-                  <SelectItem key={tag.id} value={tag.id.toString()}>
+                  <SelectItem key={tag.id || `tag-${tag.name}`} value={tag.id.toString()}>
                     <div className="flex items-center">
                       <div
                         className="w-3 h-3 rounded-full mr-2"
@@ -141,10 +142,10 @@ const TaskItem = ({
               onClick={(e) => e.stopPropagation()}
             />
             <span className={`${task.completed ? 'line-through' : ''} flex-grow`}>
-              {task.title}
+              {task.title || 'Untitled Task'}
               {task.tag?.name && (
                 <span className={`ml-2 text-sm ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-                  ({task.tag?.name})
+                  ({task.tag.name})
                 </span>
               )}
             </span>
@@ -156,7 +157,24 @@ const TaskItem = ({
             <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
               Duration: {task.duration ? formatDuration(task.duration) : 'No Duration'}
             </span>
-            <Button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="mr-2">
+            {task.dueDate && (
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToGoogleCalendar(task);
+                }}
+                className="mr-2"
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
+            )}
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(task.id);
+              }}
+              className="mr-2"
+            >
               <Trash className="h-4 w-4" />
             </Button>
           </div>

@@ -22,13 +22,13 @@
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.438.0",
     "next": "^14.2.13",
+    "next-auth": "^4.0.0",
     "react": "latest",
     "react-dom": "latest",
     "react-hotkeys-hook": "^4.5.1",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "next-auth": "^4.0.0"
-
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@types/node": "22.7.4",

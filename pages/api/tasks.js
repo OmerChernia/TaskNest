@@ -2,6 +2,8 @@
 import { kv } from '@vercel/kv';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from './auth/[...nextauth]';
+import { v4 as uuidv4 } from 'uuid';
+
 
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
@@ -48,20 +50,18 @@ export default async function handler(req, res) {
         try {
           console.log('Received task data:', req.body);
 
-          let newTasks = Array.isArray(req.body) ? req.body : [req.body];
-          
-          newTasks = newTasks.map(task => ({
-            id: task.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
-            title: task.title || 'Untitled Task',
-            text: task.text || '',
-            dueDate: task.dueDate || null,
-            tag: task.tag || null,
-            duration: task.duration || null,
-            completed: task.completed || false,
-            createdAt: task.createdAt || new Date().toISOString(),
-          }));
+          let newTask = {
+            id: uuidv4(),
+            title: req.body.title || 'Untitled Task',
+            text: req.body.text || '',
+            dueDate: req.body.dueDate || null,
+            tag: req.body.tag || null,
+            duration: req.body.duration || null,
+            completed: req.body.completed || false,
+            createdAt: req.body.createdAt || new Date().toISOString(),
+          };
 
-          console.log('Processed new tasks:', newTasks);
+          console.log('Processed new task:', newTask);
 
           // Fetch existing tasks
           let existingTasks = await kv.get(`tasks:${email}`);
@@ -83,8 +83,8 @@ export default async function handler(req, res) {
             tasksArray = [];
           }
 
-          // Add new tasks
-          tasksArray = [...tasksArray, ...newTasks];
+          // Add new task
+          tasksArray.push(newTask);
 
           console.log('Final tasks array before saving:', tasksArray);
 
@@ -95,10 +95,10 @@ export default async function handler(req, res) {
           const savedTasks = await kv.get(`tasks:${email}`);
           console.log('Saved tasks after update:', savedTasks);
 
-          res.status(201).json(newTasks);
+          res.status(201).json(newTask);
         } catch (error) {
-          console.error('Error adding task(s):', error);
-          res.status(500).json({ error: `Failed to add task(s): ${error.message}` });
+          console.error('Error adding task:', error);
+          res.status(500).json({ error: `Failed to add task: ${error.message}` });
         }
         break;
 
