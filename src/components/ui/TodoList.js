@@ -84,6 +84,7 @@ const TodoList = () => {
   const { data: session, status } = useSession(); 
   const [taskDuration, setTaskDuration] = useState('');
   const [customDuration, setCustomDuration] = useState('');
+  const [editingTaskId, setEditingTaskId] = useState(null);
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -273,16 +274,19 @@ const TodoList = () => {
       [sectionId]: !prevVisibility[sectionId]
     }));
   };
-
   const handleTaskSelection = (taskId, event) => {
     event.stopPropagation();
-
+  
     if (event.shiftKey) {
-      setSelectedTasks(prev =>
-        prev.includes(taskId)
-          ? prev.filter(id => id !== taskId)
-          : [...prev, taskId]
-      );
+      setSelectedTasks(prev => {
+        if (prev.includes(taskId)) {
+          // Deselect the task if it's already selected
+          return prev.filter(id => id !== taskId);
+        } else {
+          // Add the task to the selection
+          return [...prev, taskId];
+        }
+      });
     } else if (!event.target.closest('button') && !event.target.closest('input[type="checkbox"]')) {
       // If not shift-clicking and not clicking a button or checkbox, do nothing
       return;
@@ -291,6 +295,7 @@ const TodoList = () => {
 
   const clearTaskSelection = () => {
     setSelectedTasks([]);
+    setEditingTaskId(null);
   };
 
   const deleteSelectedTasks = async () => {
@@ -318,6 +323,42 @@ const TodoList = () => {
     }
   };
 
+  const handleTaskUpdate = async (updatedTaskData) => {
+    try {
+      setUpdatingTaskId(updatedTaskData.id);
+  
+      // Find the full tag object
+      const fullTag = tags.find(tag => tag.id.toString() === updatedTaskData.tag.toString());
+      const updatedTask = {
+        ...updatedTaskData,
+        tag: fullTag || null,
+      };
+  
+      const response = await fetch('/api/tasks', {
+        method: 'PUT',
+        credentials: 'include', // Include cookies
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedTask),
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update task');
+      }
+  
+      const data = await response.json();
+      setTasks(prevTasks => prevTasks.map(task => (task.id === data.id ? data : task)));
+      setEditingTaskId(null); // Exit edit mode
+      setSelectedTasks([]); // Clear selection
+    } catch (error) {
+      console.error('Error updating task:', error);
+      alert('Failed to update task: ' + error.message);
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
 
   useHotkeys('delete', deleteSelectedTasks, [selectedTasks]);
   useHotkeys('cmd+d, ctrl+d', (event) => {
@@ -470,6 +511,7 @@ const TodoList = () => {
       setCustomDuration('');
     }
   };
+  
 
   const renderNestedSections = (sections, level = 0, path = []) => {
     return sections.map((item, index) => {
@@ -562,6 +604,10 @@ const TodoList = () => {
                           onSelect={handleTaskSelection}
                           isSelected={selectedTasks.includes(task.id)}
                           isUpdating={updatingTaskId === task.id}
+                          isEditing={editingTaskId === task.id}
+                          onUpdateTask={handleTaskUpdate}
+                          tags={tags}
+                          durationOptions={durationOptions}
                         />
                       ))}
                     </div>
@@ -876,7 +922,17 @@ const TodoList = () => {
             Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
           </div>
         )}
-
+        {selectedTasks.length === 1 && (
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditingTaskId(selectedTasks[0]);
+            }}
+            className="mb-4"
+          >
+            Update Task
+          </Button>
+        )}
         <div className="mt-4">
           {renderNestedSections(nestedSections)}
         </div>
