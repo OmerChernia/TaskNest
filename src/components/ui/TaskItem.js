@@ -2,6 +2,18 @@ import React from 'react';
 import { Trash } from 'lucide-react';
 import { Button } from './button';
 
+function formatDuration(duration) {
+  const mins = parseFloat(duration);
+  if (isNaN(mins)) return duration; // Handle custom text
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hours} hr${hours > 1 ? 's' : ''}${remainingMins ? ` ${remainingMins} min` : ''}`;
+  } else {
+    return `${mins} min`;
+  }
+}
+
 const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected, isUpdating }) => {
   const handleDragStart = (e) => {
     e.stopPropagation(); // Prevent the section from being dragged
@@ -36,7 +48,12 @@ const TaskItem = ({ task, onDelete, onUpdate, onDragStart, onSelect, isSelected,
         </span>
       </div>
       <div className="flex items-center">
-        <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>Due: {task.dueDate || 'No Due Date'}</span>
+        <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
+          Due: {task.dueDate || 'No Due Date'}
+        </span>
+        <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
+          Duration: {task.duration ? formatDuration(task.duration) : 'No Duration'}
+        </span>
         <Button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="mr-2">
           <Trash className="h-4 w-4" />
         </Button>

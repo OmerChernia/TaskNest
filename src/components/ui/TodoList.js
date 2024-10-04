@@ -19,8 +19,6 @@ import Header from '../Header.js';
 import { signOut } from 'next-auth/react';
 import { useSession } from 'next-auth/react';
 
-
-
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
   { id: 2, name: 'Personal', color: '#00ff00' },
@@ -37,6 +35,26 @@ const initialSections = [
   { id: 'friday', name: 'Friday', type: 'section' },
   { id: 'saturday', name: 'Saturday', type: 'section' }
 ];
+
+const durationOptions = [
+  { value: 'None', label: 'No Duration' },
+  { value: '5', label: '5 min' },
+  { value: '10', label: '10 min' },
+  { value: '15', label: '15 min' },
+  { value: '20', label: '20 min' },
+  { value: '25', label: '25 min' },
+  { value: '30', label: '30 min' },
+  { value: '35', label: '35 min' },
+  { value: '40', label: '40 min' },
+  { value: '45', label: '45 min' },
+  { value: '50', label: '50 min' },
+  { value: '55', label: '55 min' },
+  { value: '60', label: '1 hr' },
+  { value: '90', label: '1.5 hr' },
+  { value: '120', label: '2 hr' },
+  { value: 'custom', label: 'Custom' },
+];
+
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const TodoList = () => {
@@ -63,9 +81,9 @@ const TodoList = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredSectionPath, setHoveredSectionPath] = useState(null);
   const router = useRouter();
-  const { data: session, status } = useSession();
-
-
+  const { data: session, status } = useSession(); 
+  const [taskDuration, setTaskDuration] = useState('');
+  const [customDuration, setCustomDuration] = useState('');
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -432,6 +450,13 @@ const TodoList = () => {
     setHoveredSectionPath(null);
   };
 
+  const handleDurationChange = (value) => {
+    setTaskDuration(value);
+    if (value !== 'custom') {
+      setCustomDuration('');
+    }
+  };
+
   const renderNestedSections = (sections, level = 0, path = []) => {
     return sections.map((item, index) => {
       const currentPath = [...path, index];
@@ -596,6 +621,8 @@ const TodoList = () => {
       setNewTask('');
       setSelectedTag('');
       setDueDate('');
+      setTaskDuration('');
+      setCustomDuration('');
     } catch (error) {
       console.error('Error adding task:', error);
       alert('Failed to add task: ' + error.message);
@@ -722,6 +749,29 @@ const TodoList = () => {
               ))}
             </SelectContent>
           </Select>
+          <Select value={taskDuration} onValueChange={handleDurationChange}>
+            <SelectTrigger className="w-[180px] mr-2">
+              <SelectValue placeholder="Select duration" />
+            </SelectTrigger>
+            <SelectContent>
+              {durationOptions.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Custom Duration Input */}
+          {taskDuration === 'custom' && (
+            <Input
+              type="text"
+              value={customDuration}
+              onChange={(e) => setCustomDuration(e.target.value)}
+              placeholder="Enter duration in minutes"
+              className="mr-2"
+            />
+          )}
           <Input
             type="date"
             value={dueDate}
@@ -730,18 +780,25 @@ const TodoList = () => {
           />
           <Button
             onClick={() => {
+              const durationValue = taskDuration === 'custom' ? customDuration : taskDuration;
               const taskData = {
                 title: newTask.trim(),
                 description: dueDate,
                 tag: selectedTag,
                 dueDate,
                 completed: false,
-                displayDate: null
+                displayDate: null,
+                duration: durationValue,
               };
               console.log('Task data before adding:', JSON.stringify(taskData));
               if (!taskData.title) {
                 console.error('Task title is empty');
                 alert('Please enter a task title');
+                return;
+              }
+              if (!taskData.duration) {
+                console.error('Task duration is empty');
+                alert('Please select a task duration');
                 return;
               }
               addTask(taskData);
