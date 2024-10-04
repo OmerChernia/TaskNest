@@ -283,12 +283,9 @@ const TodoList = () => {
           ? prev.filter(id => id !== taskId)
           : [...prev, taskId]
       );
-    } else if (!event.target.closest('button')) {
-      setSelectedTasks(prev =>
-        prev.includes(taskId)
-          ? prev.filter(id => id !== taskId)
-          : [taskId]
-      );
+    } else if (!event.target.closest('button') && !event.target.closest('input[type="checkbox"]')) {
+      // If not shift-clicking and not clicking a button or checkbox, do nothing
+      return;
     }
   };
 
@@ -296,23 +293,40 @@ const TodoList = () => {
     setSelectedTasks([]);
   };
 
-  const deleteSelectedTasks = () => {
-    setTasks(prev => prev.filter(task => !selectedTasks.includes(task.id)));
-    setSelectedTasks([]);
+  const deleteSelectedTasks = async () => {
+    try {
+      const response = await fetch('/api/tasks', {
+        method: 'DELETE',
+        credentials: 'include', // Include cookies
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: selectedTasks }),
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete tasks');
+      }
+  
+      // Update local state
+      setTasks(prev => prev.filter(task => !selectedTasks.includes(task.id)));
+      setSelectedTasks([]);
+    } catch (error) {
+      console.error('Error deleting tasks:', error);
+      alert('Failed to delete tasks: ' + error.message);
+    }
   };
 
-  const duplicateSelectedTasks = () => {
-    const newTasks = tasks.filter(task => selectedTasks.includes(task.id)).map(task => ({
-      ...task,
-      id: Date.now() + Math.random(),
-    }));
-    setTasks(prev => [...prev, ...newTasks]);
-  };
 
   useHotkeys('delete', deleteSelectedTasks, [selectedTasks]);
   useHotkeys('cmd+d, ctrl+d', (event) => {
     event.preventDefault();
-    duplicateSelectedTasks();
+    if (selectedTasks.length > 0) {
+      // Collect all selected tasks to duplicate
+      const tasksToDuplicate = tasks.filter(task => selectedTasks.includes(task.id));
+      duplicateTask(tasksToDuplicate);
+    }
   }, [selectedTasks, tasks]);
 
   const onTaskDragStart = (e, task) => {
@@ -617,7 +631,6 @@ const TodoList = () => {
   
       const addedTask = await response.json();
       setTasks(prevTasks => [...prevTasks, addedTask]);
-      // Reset form fields
       setNewTask('');
       setSelectedTag('');
       setDueDate('');
@@ -657,12 +670,15 @@ const TodoList = () => {
       alert('Failed to update task: ' + error.message);
     }
   };
-
   const deleteTask = async (id) => {
     try {
-      const response = await fetch(`/api/tasks?id=${id}`, {
+      const response = await fetch('/api/tasks', {
         method: 'DELETE',
         credentials: 'include', // Include cookies
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [id] }),
       });
   
       if (!response.ok) {
@@ -677,24 +693,47 @@ const TodoList = () => {
     }
   };
 
-  const handleLogout = async () => {
+  const duplicateTask = async (taskOrTasks) => {
     try {
-      const response = await fetch('/api/logout', {
+      const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+      
+      const duplicatedTasks = tasksToClone.map(task => ({
+        ...task,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        title: `Copy of ${task.title || 'Untitled Task'}`,
+        completed: false,
+        createdAt: new Date().toISOString(),
+      }));
+
+      console.log('Duplicated tasks before sending:', duplicatedTasks);
+
+      const response = await fetch('/api/tasks', {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(duplicatedTasks),
       });
-      if (response.ok) {
-        router.push('/login');
-      } else {
-        console.error('Failed to log out');
-        alert('Failed to log out. Please try again.');
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to duplicate tasks');
       }
+
+      const addedTasks = await response.json();
+      console.log('Tasks returned from server:', addedTasks);
+
+      setTasks(prevTasks => {
+        const newTasks = [...prevTasks, ...addedTasks];
+        console.log('Updated tasks state:', newTasks);
+        return newTasks;
+      });
     } catch (error) {
-      console.error('Error during logout:', error);
-      alert('An error occurred during logout. Please try again.');
+      console.error('Error duplicating task(s):', error);
+      alert('Failed to duplicate task(s): ' + error.message);
     }
   };
-
 
   useEffect(() => {
     const handleDragEnd = () => {

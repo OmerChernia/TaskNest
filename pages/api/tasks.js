@@ -13,14 +13,12 @@ export default async function handler(req, res) {
 
   const email = session.user.email;
 
-
-  try{
+  try {
     switch (req.method) {
       case 'GET':
         try {
-          const tasks = await kv.get(`tasks:${email}`);
+          let tasks = await kv.get(`tasks:${email}`);
           console.log('Raw tasks data:', tasks);
-          console.log('Type of tasks data:', typeof tasks);
 
           let tasksArray = [];
           if (typeof tasks === 'string') {
@@ -31,10 +29,11 @@ export default async function handler(req, res) {
             }
           } else if (Array.isArray(tasks)) {
             tasksArray = tasks;
-          } else if (tasks === null || tasks === undefined) {
-            console.log('No tasks found, returning empty array');
-          } else {
-            console.error('Unexpected type for tasks:', typeof tasks);
+          }
+
+          if (!Array.isArray(tasksArray)) {
+            console.warn('Tasks is not an array, returning empty array');
+            tasksArray = [];
           }
 
           console.log('Tasks array to be sent:', tasksArray);
@@ -45,91 +44,126 @@ export default async function handler(req, res) {
         }
         break;
 
-        case 'POST':
+      case 'POST':
+        try {
+          console.log('Received task data:', req.body);
+
+          let newTasks = Array.isArray(req.body) ? req.body : [req.body];
+          
+          newTasks = newTasks.map(task => ({
+            id: task.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            title: task.title || 'Untitled Task',
+            text: task.text || '',
+            dueDate: task.dueDate || null,
+            tag: task.tag || null,
+            duration: task.duration || null,
+            completed: task.completed || false,
+            createdAt: task.createdAt || new Date().toISOString(),
+          }));
+
+          console.log('Processed new tasks:', newTasks);
+
+          // Fetch existing tasks
+          let existingTasks = await kv.get(`tasks:${email}`);
+          console.log('Existing tasks:', existingTasks);
+
+          let tasksArray = [];
+          if (typeof existingTasks === 'string') {
+            try {
+              tasksArray = JSON.parse(existingTasks);
+            } catch (parseError) {
+              console.error('Error parsing existing tasks:', parseError);
+            }
+          } else if (Array.isArray(existingTasks)) {
+            tasksArray = existingTasks;
+          }
+
+          if (!Array.isArray(tasksArray)) {
+            console.warn('Existing tasks is not an array, initializing empty array');
+            tasksArray = [];
+          }
+
+          // Add new tasks
+          tasksArray = [...tasksArray, ...newTasks];
+
+          console.log('Final tasks array before saving:', tasksArray);
+
+          // Save updated tasks
+          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+
+          // Verify saved data
+          const savedTasks = await kv.get(`tasks:${email}`);
+          console.log('Saved tasks after update:', savedTasks);
+
+          res.status(201).json(newTasks);
+        } catch (error) {
+          console.error('Error adding task(s):', error);
+          res.status(500).json({ error: `Failed to add task(s): ${error.message}` });
+        }
+        break;
+
+      case 'PUT':
+        try {
+          const { id } = req.body;
+          if (!id) {
+            return res.status(400).json({ error: 'Task ID is required' });
+          }
+          
+          const userTasks = await kv.get(`tasks:${email}`) || [];
+          let tasksArray = Array.isArray(userTasks) ? userTasks : JSON.parse(userTasks || '[]');
+          
+          const taskIndex = tasksArray.findIndex(task => task.id === id);
+          
+          if (taskIndex === -1) {
+            return res.status(404).json({ error: 'Task not found' });
+          }
+          
+          tasksArray[taskIndex] = { ...tasksArray[taskIndex], ...req.body };
+          await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
+          res.status(200).json(tasksArray[taskIndex]);
+        } catch (error) {
+          console.error('Error updating task:', error);
+          res.status(500).json({ error: `Failed to update task: ${error.message}` });
+        }
+        break;
+
+        case 'DELETE':
           try {
-            const newTask = { ...req.body, id: Date.now().toString() };
-            console.log('New task to be added:', newTask);
+            let idsToDelete = [];
         
+            if (req.query.id) {
+              // For single task deletion using query parameter
+              idsToDelete = [req.query.id];
+            } else if (req.body && req.body.ids) {
+              // For multiple task deletion using request body
+              idsToDelete = req.body.ids;
+            } else {
+              return res.status(400).json({ error: 'Task ID(s) are required' });
+            }
+        
+            console.log('Attempting to delete tasks with ids:', idsToDelete);
+        
+            // Fetch existing tasks
             const userTasks = await kv.get(`tasks:${email}`) || [];
             let tasksArray = Array.isArray(userTasks) ? userTasks : JSON.parse(userTasks || '[]');
         
-            tasksArray.push(newTask);
+            // Filter out tasks to delete
+            const updatedTasks = tasksArray.filter(task => !idsToDelete.includes(task.id));
         
-            await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
-            res.status(201).json(newTask);
+            if (updatedTasks.length === tasksArray.length) {
+              return res.status(404).json({ error: 'Task(s) not found' });
+            }
+        
+            // Save updated tasks
+            await kv.set(`tasks:${email}`, JSON.stringify(updatedTasks));
+            console.log('Updated tasks saved to KV store');
+        
+            res.status(200).json({ message: 'Tasks deleted successfully' });
           } catch (error) {
-            console.error('Error adding task:', error);
-            res.status(500).json({ error: `Failed to add task: ${error.message}` });
+            console.error('Error deleting tasks:', error);
+            res.status(500).json({ error: `Failed to delete tasks: ${error.message}` });
           }
           break;
-
-          case 'PUT':
-            try {
-              const { id } = req.body;
-              if (!id) {
-                return res.status(400).json({ error: 'Task ID is required' });
-              }
-          
-              const userTasks = await kv.get(`tasks:${email}`) || [];
-              let tasksArray = Array.isArray(userTasks) ? userTasks : JSON.parse(userTasks || '[]');
-          
-              const taskIndex = tasksArray.findIndex(task => task.id === id);
-          
-              if (taskIndex === -1) {
-                return res.status(404).json({ error: 'Task not found' });
-              }
-          
-              tasksArray[taskIndex] = { ...tasksArray[taskIndex], ...req.body };
-              await kv.set(`tasks:${email}`, JSON.stringify(tasksArray));
-              res.status(200).json(tasksArray[taskIndex]);
-            } catch (error) {
-              console.error('Error updating task:', error);
-              res.status(500).json({ error: `Failed to update task: ${error.message}` });
-            }
-            break;
-
-      case 'DELETE':
-        try {
-          const { id } = req.query;
-          console.log('Attempting to delete task with id:', id);
-
-          const userTasks = await kv.get(`tasks:${email}`);
-          console.log('Current tasks from KV:', userTasks);
-          console.log('Type of userTasks:', typeof userTasks);
-
-          let tasksArray = [];
-          if (Array.isArray(userTasks)) {
-            tasksArray = userTasks;
-          } else if (typeof userTasks === 'string') {
-            try {
-              tasksArray = JSON.parse(userTasks);
-            } catch (parseError) {
-              console.error('Error parsing existing tasks:', parseError);
-              tasksArray = [];
-            }
-          } else if (userTasks === null || userTasks === undefined) {
-            console.log('No existing tasks found');
-            return res.status(404).json({ error: 'Task not found' });
-          } else {
-            console.error('Unexpected type for userTasks:', typeof userTasks);
-            return res.status(500).json({ error: 'Unexpected data format' });
-          }
-
-          const updatedTasks = tasksArray.filter(task => task.id !== id);
-
-          if (tasksArray.length === updatedTasks.length) {
-            return res.status(404).json({ error: 'Task not found' });
-          }
-
-          await kv.set(`tasks:${email}`, JSON.stringify(updatedTasks));
-          console.log('Updated tasks saved to KV store');
-
-          res.status(200).json({ message: 'Task deleted successfully' });
-        } catch (error) {
-          console.error('Error deleting task:', error);
-          res.status(500).json({ error: `Failed to delete task: ${error.message}` });
-        }
-        break;
 
       default:
         res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
