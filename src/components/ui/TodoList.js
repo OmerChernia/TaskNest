@@ -551,13 +551,15 @@ const TodoList = () => {
             }
           }}
           className={`mb-4 ${
-            level > 0 ? `ml-4 pl-4 border-l-2 border-gray-300` : ''
+            level > 0 ? `ml-4` : ''
           } ${
             dropTarget === item.id && !isEditingSections ? 'border-2 border-blue-500 border-dashed' : ''
           } ${
             isEditingSections && isDragging ? 'section-dragging' : ''
           } ${
             isHovered && isEditingSections ? 'border border-blue-500' : ''
+          } ${
+            item.type !== 'divider' ? 'bg-gray-700 rounded-lg p-4' : ''
           }`}
         >
           {dropIndicator === `${currentPath.join('-')}-top` && (
@@ -968,217 +970,224 @@ const TodoList = () => {
 
   return (
     isMounted ? (
-      <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4">
-        <div className="w-full max-w-4xl bg-gray-800 shadow-lg rounded-lg p-6 text-gray-200 relative">
-          <Header />
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-2xl font-bold text-white">Your Todo List</h1>
-            <button
-              onClick={syncWeekTasksToGoogleCalendar}
-              className="flex items-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-              <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
-              Sync Week's Tasks to Google Calendar
-            </button>
-            <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
-              Logout
-            </button>
+      <>
+        {selectedTasks.length > 0 && (
+          <div className="fixed top-0 left-0 right-0 bg-slate-900 text-white p-2 text-center z-50">
+            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
+            Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
           </div>
-          <div className="flex mb-4 items-end">
-            <Input
-              type="text"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              placeholder="Enter new task"
-              className="mr-2"
-            />
-            <Select value={selectedTag} onValueChange={setSelectedTag}>
-              <SelectTrigger className="w-[180px] mr-2">
-                <SelectValue placeholder="Select a tag" />
-              </SelectTrigger>
-              <SelectContent>
-                {tags.map(tag => (
-                  <SelectItem key={tag.id} value={tag.id.toString()}>
-                    <div className="flex items-center">
-                      <div
-                        className="w-3 h-3 rounded-full mr-2"
-                        style={{ backgroundColor: tag.color }}
-                      ></div>
-                      {tag.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={taskDuration} onValueChange={handleDurationChange}>
-              <SelectTrigger className="w-[180px] mr-2">
-                <SelectValue placeholder="Select duration" />
-              </SelectTrigger>
-              <SelectContent>
-                {durationOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Custom Duration Input */}
-            {taskDuration === 'custom' && (
-              <Input
-                type="text"
-                value={customDuration}
-                onChange={(e) => setCustomDuration(e.target.value)}
-                placeholder="Enter duration in minutes"
-                className="mr-2"
-              />
-            )}
-            <Input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="mr-2"
-            />
-            <Button
-              onClick={() => {
-                const durationValue = taskDuration === 'custom' ? customDuration : (taskDuration || 'None');
-                const taskData = {
-                  title: newTask.trim(),
-                  tag: selectedTag,
-                  dueDate,
-                  completed: false,
-                  displayDate: null,
-                  duration: durationValue,
-                };
-                console.log('Task data before adding:', JSON.stringify(taskData));
-                if (!taskData.title) {
-                  console.error('Task title is empty');
-                  alert('Please enter a task title');
-                  return;
-                }
-                addTask(taskData);
-              }}
-              className="px-4 py-2"
-            >
-              Add
-            </Button>
-          </div>
-
-          {isEditingSections && (
-            <div className="mb-4">
-              <Input
-                type="text"
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                placeholder="New section name"
-                className="mr-2"
-              />
-              <Button onClick={() => addSection('section')} className="mr-2">
-                Add Section
-              </Button>
-              <Button onClick={() => addSection('divider')}>
-                Add Divider
-              </Button>
-            </div>
-          )}
-
-          {selectedTasks.length > 0 && (
-            <div className="mb-4 p-2 bg-slate-900 text-white border border-slate-700 rounded">
-              <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
-              Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
-            </div>
-          )}
-          {selectedTasks.length === 1 && (
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingTaskId(selectedTasks[0]);
-              }}
-              className="mb-4"
-            >
-              Update Task
-            </Button>
-          )}
-          <div className="mt-4">
-            {renderNestedSections(nestedSections)}
-          </div>
-          {showCalendarPopup && (
-          <Dialog open={showCalendarPopup} onOpenChange={setShowCalendarPopup}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Task to Google Calendar</DialogTitle>
-              </DialogHeader>
-              <div className="py-4">
-                <p>Do you want to add this task to Google Calendar?</p>
-                <div className="flex justify-end mt-4">
-                  <Button onClick={() => setShowCalendarPopup(false)} className="mr-2">
-                    No
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      addToGoogleCalendar(taskToAddToCalendar);
-                      setShowCalendarPopup(false);
-                    }}
-                  >
-                    Yes
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         )}
-          <div className="fixed bottom-4 right-4 flex space-x-2">
-            <Button onClick={() => setIsEditingSections(!isEditingSections)}>
-              <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
-            </Button>
-            <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" /> Edit Tags
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>Edit Tags</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
+        <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4">
+          {/* Update Task button - moved lower */}
+          {selectedTasks.length === 1 && (
+            <div className="fixed top-16 left-4 z-50">
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingTaskId(selectedTasks[0]);
+                }}
+              >
+                Update Task
+              </Button>
+            </div>
+          )}
+
+          <div className="w-full max-w-4xl bg-gray-800 shadow-lg rounded-lg p-6 text-gray-200 relative">
+            <Header />
+            <div className="flex justify-between items-center mb-4">
+              <h1 className="text-2xl font-bold text-white">Your Todo List</h1>
+              <button
+                onClick={syncWeekTasksToGoogleCalendar}
+                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded">
+                <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
+                Sync Week's Tasks to Google Calendar
+              </button>
+              <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded">
+                Logout
+              </button>
+            </div>
+            <div className="flex mb-4 items-end">
+              <Input
+                type="text"
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                placeholder="Enter new task"
+                className="mr-2"
+              />
+              <Select value={selectedTag} onValueChange={setSelectedTag}>
+                <SelectTrigger className="w-[180px] mr-2">
+                  <SelectValue placeholder="Select a tag" />
+                </SelectTrigger>
+                <SelectContent>
                   {tags.map(tag => (
-                    <div key={tag.id} className="flex items-center justify-between">
+                    <SelectItem key={tag.id} value={tag.id.toString()}>
                       <div className="flex items-center">
                         <div
-                          className="w-4 h-4 rounded-full mr-2"
+                          className="w-3 h-3 rounded-full mr-2"
                           style={{ backgroundColor: tag.color }}
                         ></div>
-                        <span>{tag.name}</span>
+                        {tag.name}
                       </div>
-                      <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
-                        <Trash className="h-4 w-4" />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={taskDuration} onValueChange={handleDurationChange}>
+                <SelectTrigger className="w-[180px] mr-2">
+                  <SelectValue placeholder="Select duration" />
+                </SelectTrigger>
+                <SelectContent>
+                  {durationOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Custom Duration Input */}
+              {taskDuration === 'custom' && (
+                <Input
+                  type="text"
+                  value={customDuration}
+                  onChange={(e) => setCustomDuration(e.target.value)}
+                  placeholder="Enter duration in minutes"
+                  className="mr-2"
+                />
+              )}
+              <Input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="mr-2"
+              />
+              <Button
+                onClick={() => {
+                  const durationValue = taskDuration === 'custom' ? customDuration : (taskDuration || 'None');
+                  const taskData = {
+                    title: newTask.trim(),
+                    tag: selectedTag,
+                    dueDate,
+                    completed: false,
+                    displayDate: null,
+                    duration: durationValue,
+                  };
+                  console.log('Task data before adding:', JSON.stringify(taskData));
+                  if (!taskData.title) {
+                    console.error('Task title is empty');
+                    alert('Please enter a task title');
+                    return;
+                  }
+                  addTask(taskData);
+                }}
+                className="px-4 py-2"
+              >
+                Add
+              </Button>
+            </div>
+
+            {/* Edit Sections and Edit Tags buttons */}
+            <div className="fixed bottom-4 right-4 flex space-x-2">
+              <Button onClick={() => setIsEditingSections(!isEditingSections)}>
+                <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
+              </Button>
+              <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" /> Edit Tags
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Edit Tags</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    {tags.map(tag => (
+                      <div key={tag.id} className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div
+                            className="w-4 h-4 rounded-full mr-2"
+                            style={{ backgroundColor: tag.color }}
+                          ></div>
+                          <span>{tag.name}</span>
+                        </div>
+                        <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                          <Trash className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex items-center">
+                      <Input
+                        type="text"
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="New tag name"
+                        className="mr-2"
+                      />
+                      <Input
+                        type="color"
+                        value={newTagColor}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        className="w-12"
+                      />
+                      <Button onClick={addTag} className="ml-2">
+                        <Plus className="h-4 w-4" />
                       </Button>
                     </div>
-                  ))}
-                  <div className="flex items-center">
-                    <Input
-                      type="text"
-                      value={newTagName}
-                      onChange={(e) => setNewTagName(e.target.value)}
-                      placeholder="New tag name"
-                      className="mr-2"
-                    />
-                    <Input
-                      type="color"
-                      value={newTagColor}
-                      onChange={(e) => setNewTagColor(e.target.value)}
-                      className="w-12"
-                    />
-                    <Button onClick={addTag} className="ml-2">
-                      <Plus className="h-4 w-4" />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {isEditingSections && (
+              <div className="mb-4">
+                <Input
+                  type="text"
+                  value={newSectionName}
+                  onChange={(e) => setNewSectionName(e.target.value)}
+                  placeholder="New section name"
+                  className="mr-2"
+                />
+                <Button onClick={() => addSection('section')} className="mr-2">
+                  Add Section
+                </Button>
+                <Button onClick={() => addSection('divider')}>
+                  Add Divider
+                </Button>
+              </div>
+            )}
+
+            <div className="mt-4">
+              {renderNestedSections(nestedSections)}
+            </div>
+            {showCalendarPopup && (
+            <Dialog open={showCalendarPopup} onOpenChange={setShowCalendarPopup}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Task to Google Calendar</DialogTitle>
+                </DialogHeader>
+                <div className="py-4">
+                  <p>Do you want to add this task to Google Calendar?</p>
+                  <div className="flex justify-end mt-4">
+                    <Button onClick={() => setShowCalendarPopup(false)} className="mr-2">
+                      No
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        addToGoogleCalendar(taskToAddToCalendar);
+                        setShowCalendarPopup(false);
+                      }}
+                    >
+                      Yes
                     </Button>
                   </div>
                 </div>
               </DialogContent>
             </Dialog>
+          )}
           </div>
         </div>
-      </div>
+      </>
     ) : null
   );
 };
