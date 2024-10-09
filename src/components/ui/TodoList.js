@@ -88,7 +88,8 @@ const TodoList = () => {
   const accessToken = session?.accessToken;
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
   const [taskToAddToCalendar, setTaskToAddToCalendar] = useState(null);
-  
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekSectionIds = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -103,16 +104,34 @@ const TodoList = () => {
     try {
       const response = await fetch('/api/tasks', {
         method: 'GET',
-        credentials: 'include', // Include cookies
+        credentials: 'include',
       });
       if (!response.ok) throw new Error('Failed to fetch tasks');
-      const data = await response.json();
+      let data = await response.json();
       console.log('Fetched tasks:', data);
+  
+      data = data.map(task => {
+        if (!task.weekKey) {
+          const taskWeekKey = task.dueDate ? getWeekStartDateForDate(task.dueDate) : getWeekStartDate(0);
+          return { ...task, weekKey: taskWeekKey };
+        }
+        return task;
+      });
+  
       setTasks(data);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
   };
+
+const getWeekStartDateForDate = (dateStr) => {
+  const date = new Date(dateStr);
+  const dayIndex = date.getDay(); // 0 (Sunday) to 6 (Saturday)
+  const sunday = new Date(date);
+  sunday.setDate(date.getDate() - dayIndex);
+  sunday.setHours(0, 0, 0, 0);
+  return sunday.toISOString().split('T')[0]; // Returns 'YYYY-MM-DD'
+};
 
   const fetchTags = async () => {
     try {
@@ -394,13 +413,19 @@ const TodoList = () => {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedTask) return;
-
+  
     setUpdatingTaskId(draggedTask.id);
-
+  
     const updatedTask = {
       ...draggedTask,
-      section: targetSectionId
+      section: targetSectionId,
     };
+
+    if (weekSectionIds.includes(targetSectionId)) {
+      updatedTask.weekKey = getWeekStartDate(weekOffset);
+    } else {
+      delete updatedTask.weekKey;
+    }
 
     try {
       const response = await fetch('/api/tasks', {
@@ -408,11 +433,11 @@ const TodoList = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedTask),
       });
-
+  
       if (!response.ok) {
         throw new Error('Failed to update task section');
       }
-
+  
       const updatedTaskFromServer = await response.json();
       setTasks(prevTasks => prevTasks.map(task =>
         task.id === updatedTaskFromServer.id ? updatedTaskFromServer : task
@@ -422,7 +447,7 @@ const TodoList = () => {
     } finally {
       setUpdatingTaskId(null);
     }
-
+  
     setDraggedTask(null);
     setDropTarget(null);
   };
@@ -516,7 +541,15 @@ const TodoList = () => {
     }
   };
   
-
+  const getWeekStartDate = (offset) => {
+    const today = new Date();
+    const dayIndex = today.getDay(); // 0 (Sunday) to 6 (Saturday)
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - dayIndex + offset * 7);
+    sunday.setHours(0, 0, 0, 0);
+    return sunday.toISOString().split('T')[0]; // Returns 'YYYY-MM-DD'
+  };
+  
   const renderNestedSections = (sections, level = 0, path = []) => {
     return sections.map((item, index) => {
       const currentPath = [...path, index];
@@ -634,33 +667,42 @@ const TodoList = () => {
 
   const renderSectionTitle = (section) => {
     if (section.type === 'divider') return null;
-
-    if (initialSections.some(s => s.name === section.name)) {
-      const date = section.name === "New Tasks" ? "" : ` (${getDateForDay(section.name)})`;
+  
+    if (weekSectionIds.includes(section.id)) {
+      const date = ` (${getDateForDay(section.name)})`;
       return `${section.name}${date}`;
     }
-
+  
     return section.name;
   };
 
-  const getTasksForSection = (sectionId) => {
+const getTasksForSection = (sectionId) => {
+  if (weekSectionIds.includes(sectionId)) {
+    // Week section: filter tasks by weekKey
+    const currentWeekKey = getWeekStartDate(weekOffset);
+    return tasks.filter(task => {
+      const taskWeekKey = task.weekKey || currentWeekKey;
+      return (
+        String(task.section) === String(sectionId) &&
+        taskWeekKey === currentWeekKey
+      );
+    });
+  } else {
+    // Non-week section: include tasks regardless of weekKey
     return tasks.filter(task =>
       String(task.section) === String(sectionId) ||
       (!task.section && sectionId === 'new-tasks')
     );
-  };
+  }
+};
 
   const getDateForDay = (day) => {
     const today = new Date();
-    const todayDayIndex = today.getDay();
+    const todayDayIndex = today.getDay(); // 0 (Sunday) to 6 (Saturday)
     const formattedDay = day.charAt(0).toUpperCase() + day.slice(1).toLowerCase();
     const targetDayIndex = daysOfWeek.indexOf(formattedDay);
   
-    let diff = targetDayIndex - todayDayIndex;
-  
-    if (diff < 0) {
-      diff += 7;
-    }
+    let diff = targetDayIndex - todayDayIndex + weekOffset * 7;
   
     const date = new Date(today);
     date.setDate(today.getDate() + diff);
@@ -686,8 +728,13 @@ const TodoList = () => {
         duration: taskData.duration || null,
         completed: false,
         createdAt: new Date().toISOString(),
+        section: taskData.section || null,
       };
-
+  
+      if (weekSectionIds.includes(newTask.section)) {
+        newTask.weekKey = getWeekStartDate(weekOffset);
+      }
+  
       console.log('Sending new task to server:', newTask);
 
       const response = await fetch('/api/tasks', {
@@ -734,6 +781,19 @@ const TodoList = () => {
         const tagObject = tags.find(tag => tag.id.toString() === updatedTask.tag.toString());
         updatedTask.tag = tagObject || null;
       }
+      // Check if the task is in a week section
+      if (weekSectionIds.includes(updatedTask.section)) {
+        // Assign or update the weekKey
+        updatedTask.weekKey = getWeekStartDate(weekOffset);
+      } else {
+        // Remove weekKey if the task is moved out of a week section
+        delete updatedTask.weekKey;
+      }
+
+      // Ensure weekKey is set
+      if (!updatedTask.weekKey) {
+        updatedTask.weekKey = getWeekStartDate(weekOffset);
+      }
   
       const response = await fetch('/api/tasks', {
         method: 'PUT',
@@ -756,6 +816,7 @@ const TodoList = () => {
       alert('Failed to update task: ' + error.message);
     }
   };
+
   const deleteTask = async (id) => {
     try {
       const response = await fetch('/api/tasks', {
@@ -911,43 +972,52 @@ const TodoList = () => {
   };
 
   const duplicateTask = async (taskOrTasks) => {
-    try {
-      const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
-      
-      for (const task of tasksToClone) {
-        const duplicatedTask = {
-          ...task,
-          title: `${task.title || 'Untitled Task'}`,
-          completed: false,
-          createdAt: new Date().toISOString(),
-        };
-  
-        console.log('Duplicating task:', duplicatedTask);
-  
-        const response = await fetch('/api/tasks', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(duplicatedTask),
-        });
-  
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to duplicate task');
-        }
-  
-        const addedTask = await response.json();
-        console.log('Received duplicated task from server:', addedTask);
-  
-        setTasks(prevTasks => [...prevTasks, addedTask]);
+  try {
+    const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+    
+    for (const task of tasksToClone) {
+      const duplicatedTask = {
+        ...task,
+        id: undefined, // Remove id so a new one is generated
+        title: `${task.title || 'Untitled Task'}`,
+        completed: false,
+        createdAt: new Date().toISOString(),
+        section: task.section,
+      };
+
+      // Assign weekKey only if the task is in a week section
+      if (weekSectionIds.includes(duplicatedTask.section)) {
+        duplicatedTask.weekKey = getWeekStartDate(weekOffset);
+      } else {
+        delete duplicatedTask.weekKey;
       }
-    } catch (error) {
-      console.error('Error duplicating task(s):', error);
-      alert('Failed to duplicate task(s): ' + error.message);
+
+      console.log('Duplicating task:', duplicatedTask);
+
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(duplicatedTask),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to duplicate task');
+      }
+
+      const addedTask = await response.json();
+      console.log('Received duplicated task from server:', addedTask);
+
+      setTasks(prevTasks => [...prevTasks, addedTask]);
     }
-  };
+  } catch (error) {
+    console.error('Error duplicating task(s):', error);
+    alert('Failed to duplicate task(s): ' + error.message);
+  }
+};
 
   
 
@@ -977,35 +1047,43 @@ const TodoList = () => {
             Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
           </div>
         )}
-        <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4">
-          {/* Update Task button - moved lower */}
-          {selectedTasks.length === 1 && (
-            <div className="fixed top-16 left-4 z-50">
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditingTaskId(selectedTasks[0]);
-                }}
-              >
-                Update Task
-              </Button>
-            </div>
-          )}
+        
+        {/* Logout button */}
+        <button 
+          onClick={() => signOut()} 
+          className="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded z-50"
+        >
+          Logout
+        </button>
+
+        {/* Sync and Current Week buttons */}
+        <div className="fixed top-4 left-4 flex flex-col space-y-2 z-50">
+          <button
+            onClick={syncWeekTasksToGoogleCalendar}
+            className="flex items-center bg-blue-600 text-white px-4 py-2 rounded"
+          >
+            <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
+            Sync Week's Tasks
+          </button>
+          <button
+            onClick={() => setWeekOffset(0)}
+            className="bg-green-600 text-white px-4 py-2 rounded"
+          >
+            Current Week
+          </button>
+        </div>
+
+        <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4 relative">
+          {/* Left Button */}
+          <Button 
+            onClick={() => setWeekOffset(weekOffset - 1)} 
+            className="fixed left-4 top-1/2 transform -translate-y-1/2 z-20"
+          >
+            &lt;
+          </Button>
 
           <div className="w-full max-w-4xl bg-gray-800 shadow-lg rounded-lg p-6 text-gray-200 relative">
             <Header />
-            <div className="flex justify-between items-center mb-4">
-              <h1 className="text-2xl font-bold text-white">Your Todo List</h1>
-              <button
-                onClick={syncWeekTasksToGoogleCalendar}
-                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded">
-                <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
-                Sync Week's Tasks to Google Calendar
-              </button>
-              <button onClick={() => signOut()} className="bg-red-500 text-white px-4 py-2 rounded">
-                Logout
-              </button>
-            </div>
             <div className="flex mb-4 items-end">
               <Input
                 type="text"
@@ -1085,9 +1163,10 @@ const TodoList = () => {
                 Add
               </Button>
             </div>
-
+               
             {/* Edit Sections and Edit Tags buttons */}
             <div className="fixed bottom-4 right-4 flex space-x-2">
+              
               <Button onClick={() => setIsEditingSections(!isEditingSections)}>
                 <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
               </Button>
@@ -1186,6 +1265,14 @@ const TodoList = () => {
             </Dialog>
           )}
           </div>
+
+          {/* Right Button */}
+          <Button 
+            onClick={() => setWeekOffset(weekOffset + 1)} 
+            className="fixed right-4 top-1/2 transform -translate-y-1/2 z-20"
+          >
+            &gt;
+          </Button>
         </div>
       </>
     ) : null
