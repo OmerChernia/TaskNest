@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash, GripVertical, Edit3, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import { useRouter } from 'next/router';
 import Header from '../Header.js';
 import { signOut } from 'next-auth/react';
 import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 
 const initialTags = [
   { id: 1, name: 'Work', color: '#ff0000' },
@@ -90,6 +91,18 @@ const TodoList = () => {
   const [taskToAddToCalendar, setTaskToAddToCalendar] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const weekSectionIds = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const defaultSectionIds = [
+    'new-tasks',
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ];
+  const [draggedTasks, setDraggedTasks] = useState([]);
+
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -276,6 +289,10 @@ const getWeekStartDateForDate = (dateStr) => {
   };
 
   const deleteSection = (sectionId) => {
+    if (defaultSectionIds.includes(sectionId)) {
+      alert('Default sections cannot be deleted.');
+      return;
+    }
     const updatedSections = removeSectionById([...nestedSections], sectionId);
     setNestedSections(updatedSections);
     updateSections(updatedSections);
@@ -297,24 +314,19 @@ const getWeekStartDateForDate = (dateStr) => {
       [sectionId]: !prevVisibility[sectionId]
     }));
   };
-  const handleTaskSelection = (taskId, event) => {
-    event.stopPropagation();
-  
-    if (event.shiftKey) {
-      setSelectedTasks(prev => {
-        if (prev.includes(taskId)) {
-          // Deselect the task if it's already selected
-          return prev.filter(id => id !== taskId);
+
+  const handleTaskSelection = useCallback((taskId, event) => {
+    const id = taskId.toString(); // Ensure the ID is a string
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      setSelectedTasks((prevSelected) => {
+        if (prevSelected.includes(id)) {
+          return prevSelected.filter((selectedId) => selectedId !== id);
         } else {
-          // Add the task to the selection
-          return [...prev, taskId];
+          return [...prevSelected, id];
         }
       });
-    } else if (!event.target.closest('button') && !event.target.closest('input[type="checkbox"]')) {
-      // If not shift-clicking and not clicking a button or checkbox, do nothing
-      return;
     }
-  };
+  }, []);
 
   const clearTaskSelection = () => {
     setSelectedTasks([]);
@@ -394,8 +406,19 @@ const getWeekStartDateForDate = (dateStr) => {
   }, [selectedTasks, tasks]);
 
   const onTaskDragStart = (e, task) => {
-    setDraggedTask(task);
-    e.dataTransfer.setData('text/plain', JSON.stringify(task));
+    e.stopPropagation();
+  
+    let tasksToDrag = [];
+    if (selectedTasks.includes(task.id.toString())) {
+      // If the task is selected, drag all selected tasks
+      tasksToDrag = tasks.filter(t => selectedTasks.includes(t.id.toString()));
+    } else {
+      // If the task is not selected, drag only that task
+      tasksToDrag = [task];
+    }
+  
+    setDraggedTasks(tasksToDrag);
+    // Optionally, set a custom drag image or data
   };
 
   const onTaskDragOver = (e, sectionId) => {
@@ -412,44 +435,56 @@ const getWeekStartDateForDate = (dateStr) => {
   const onTaskDrop = async (e, targetSectionId) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!draggedTask) return;
   
-    setUpdatingTaskId(draggedTask.id);
+    if (draggedTasks.length === 0) return;
   
-    const updatedTask = {
-      ...draggedTask,
-      section: targetSectionId,
-    };
-
-    if (weekSectionIds.includes(targetSectionId)) {
-      updatedTask.weekKey = getWeekStartDate(weekOffset);
-    } else {
-      delete updatedTask.weekKey;
-    }
-
-    try {
-      const response = await fetch('/api/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedTask),
-      });
+    // Show a loading indicator if needed
+    setUpdatingTaskId('batch-update'); // You can use a special value to indicate batch update
   
-      if (!response.ok) {
-        throw new Error('Failed to update task section');
+    const updatedTasksPromises = draggedTasks.map(async (task) => {
+      const updatedTask = {
+        ...task,
+        section: targetSectionId,
+      };
+  
+      if (weekSectionIds.includes(targetSectionId)) {
+        updatedTask.weekKey = getWeekStartDate(weekOffset);
+      } else {
+        delete updatedTask.weekKey;
       }
   
-      const updatedTaskFromServer = await response.json();
-      setTasks(prevTasks => prevTasks.map(task =>
-        task.id === updatedTaskFromServer.id ? updatedTaskFromServer : task
-      ));
-    } catch (error) {
-      console.error('Error updating task section:', error);
-    } finally {
-      setUpdatingTaskId(null);
-    }
+      try {
+        const response = await fetch('/api/tasks', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedTask),
+        });
   
-    setDraggedTask(null);
+        if (!response.ok) {
+          throw new Error('Failed to update task section');
+        }
+  
+        const updatedTaskFromServer = await response.json();
+        return updatedTaskFromServer;
+      } catch (error) {
+        console.error('Error updating task section:', error);
+        return null;
+      }
+    });
+  
+    const updatedTasks = await Promise.all(updatedTasksPromises);
+  
+    setTasks(prevTasks =>
+      prevTasks.map(task => {
+        const updatedTask = updatedTasks.find(t => t && t.id === task.id);
+        return updatedTask ? updatedTask : task;
+      })
+    );
+  
+    // Reset dragged tasks and drop target
+    setDraggedTasks([]);
     setDropTarget(null);
+    setUpdatingTaskId(null);
   };
 
   const handleDragStart = (e, section, path) => {
@@ -559,106 +594,95 @@ const getWeekStartDateForDate = (dateStr) => {
         <div
           key={item.id || `divider-${index}`}
           draggable={isEditingSections}
-          onDragStart={(e) => {
-            if (isEditingSections) {
-              handleDragStart(e, item, currentPath);
-            }
-          }}
-          onDragOver={(e) =>
-            isEditingSections
-              ? handleDragOver(e, item, index, currentPath)
-              : onTaskDragOver(e, item.id)
-          }
-          onDragLeave={(e) => {
-            if (isEditingSections) {
-              handleDragLeave(e);
-            } else {
-              onTaskDragLeave(e);
-            }
-          }}
-          onDrop={(e) => {
-            if (isEditingSections) {
-              handleDrop(e, item, currentPath);
-            } else {
-              onTaskDrop(e, item.id);
-            }
-          }}
-          className={`mb-4 ${
-            level > 0 ? `ml-4` : ''
-          } ${
-            dropTarget === item.id && !isEditingSections ? 'border-2 border-blue-500 border-dashed' : ''
-          } ${
-            isEditingSections && isDragging ? 'section-dragging' : ''
-          } ${
-            isHovered && isEditingSections ? 'border border-blue-500' : ''
-          } ${
-            item.type !== 'divider' ? 'bg-gray-700 rounded-lg p-4' : ''
-          }`}
+          onDragStart={(e) => isEditingSections && handleDragStart(e, item, currentPath)}
+          onDragOver={(e) => isEditingSections ? handleDragOver(e, item, index, currentPath) : onTaskDragOver(e, item.id)}
+          onDragLeave={(e) => isEditingSections ? handleDragLeave(e) : onTaskDragLeave(e)}
+          onDrop={(e) => isEditingSections ? handleDrop(e, item, currentPath) : onTaskDrop(e, item.id)}
+          className={`mb-4 ${level > 0 ? 'ml-4' : ''} ${isEditingSections && isDragging ? 'section-dragging' : ''} ${isHovered && isEditingSections ? 'border border-orange-500' : ''}`}
         >
           {dropIndicator === `${currentPath.join('-')}-top` && (
-            <div className="h-1 bg-blue-500 my-2"></div>
+            <div className="h-1 bg-orange-500 my-2"></div>
           )}
           {item.type === 'divider' ? (
-            <div className="flex items-center">
-              {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
-              <hr className="flex-grow border-t border-gray-300" />
-              {isEditingSections && (
-                <Button onClick={() => deleteSection(item.id)} className="ml-2">
+          <div className="bg-gray-100 p-2 rounded-lg shadow-md">
+            <div className="flex items-center justify-between bg-gray-100 p-2 rounded-lg">
+              <div className="flex items-center flex-grow">
+                {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
+                <hr className="flex-grow border-t border-gray-300" />
+              </div>
+              {isEditingSections && !defaultSectionIds.includes(item.id) && (
+                <Button
+                  onClick={() => deleteSection(item.id)}
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full p-1 ml-2"
+                >
                   <Trash className="h-4 w-4" />
                 </Button>
               )}
             </div>
+            </div>
           ) : (
-            <>
-              <div className="flex items-center mb-2">
-                {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
-                <button
-                  onClick={() => toggleSectionVisibility(item.id)}
-                  className="mr-2 focus:outline-none"
-                >
-                  {sectionVisibility[item.id] ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
-                <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
-                {isEditingSections && (
-                  <Button onClick={() => deleteSection(item.id)} className="ml-2">
+            <div className="bg-gray-100 p-2 rounded-lg shadow-md">
+              <div className={`bg-gray-100 p-4 rounded-lg ${dropTarget === item.id && !isEditingSections ? 'border-2 border-gray-500 border-dashed' : ''}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center">
+                    {isEditingSections && <GripVertical className="mr-2 cursor-move" />}
+                    <button
+                      onClick={() => toggleSectionVisibility(item.id)}
+                      className="mr-2 focus:outline-none"
+                    >
+                      {sectionVisibility[item.id] ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </button>
+                    <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
+                  </div>
+                  {isEditingSections && !defaultSectionIds.includes(item.id) && (
+                  <Button
+                    onClick={() => deleteSection(item.id)}
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full p-1 ml-2"
+                  >
                     <Trash className="h-4 w-4" />
                   </Button>
                 )}
+                </div>
+                {sectionVisibility[item.id] && (
+                  <>
+                    {!isEditingSections && (
+                      <div>
+                    {getTasksForSection(item.id).map((task) => (
+                      <TaskItem
+                        key={task.id}
+                        task={task}
+                        onDelete={deleteTask}
+                        onUpdate={updateTask}
+                        onDragStart={onTaskDragStart}
+                        onSelect={handleTaskSelection}
+                        isSelected={selectedTasks.includes(task.id)}
+                        isUpdating={updatingTaskId === task.id}
+                        isEditing={editingTaskId === task.id}
+                        onUpdateTask={handleTaskUpdate}
+                        onStartEditing={startEditingTask} // Add this line
+                        tags={tags}
+                        durationOptions={durationOptions}
+                        onAddToGoogleCalendar={addToGoogleCalendar}
+                      />
+                    ))}
+                      </div>
+                    )}
+                    {item.children && renderNestedSections(item.children, level + 1, currentPath)}
+                  </>
+                )}
               </div>
-              {sectionVisibility[item.id] && (
-                <>
-                  {!isEditingSections && (
-                    <div>
-                      {getTasksForSection(item.id).map((task) => (
-                        <TaskItem
-                          key={task.id}
-                          task={task}
-                          onDelete={deleteTask}
-                          onUpdate={updateTask}
-                          onDragStart={onTaskDragStart}
-                          onSelect={handleTaskSelection}
-                          isSelected={selectedTasks.includes(task.id)}
-                          isUpdating={updatingTaskId === task.id}
-                          isEditing={editingTaskId === task.id}
-                          onUpdateTask={handleTaskUpdate}
-                          tags={tags}
-                          durationOptions={durationOptions}
-                          onAddToGoogleCalendar={addToGoogleCalendar}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {item.children && renderNestedSections(item.children, level + 1, currentPath)}
-                </>
-              )}
-            </>
+            </div>
           )}
           {dropIndicator === `${currentPath.join('-')}-bottom` && (
-            <div className="h-1 bg-blue-500 my-2"></div>
+            <div className="h-1 bg-orange-500 my-2"></div>
           )}
         </div>
       );
@@ -694,6 +718,10 @@ const getTasksForSection = (sectionId) => {
       (!task.section && sectionId === 'new-tasks')
     );
   }
+};
+
+const startEditingTask = (taskId) => {
+  setEditingTaskId(taskId);
 };
 
   const getDateForDay = (day) => {
@@ -904,13 +932,17 @@ const getTasksForSection = (sectionId) => {
   };
 
   const syncWeekTasksToGoogleCalendar = async () => {
-    // Get tasks from days of the week sections
     const weekSections = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const tasksToSync = tasks.filter(task => weekSections.includes(task.section));
+    const currentWeekKey = getWeekStartDate(weekOffset); // Get the current week's key
   
+    const tasksToSync = tasks.filter(task =>
+      weekSections.includes(task.section) && task.weekKey === currentWeekKey
+    );
+    
     for (const task of tasksToSync) {
-      const sectionDate = getDateForDay(task.section); // Returns 'YYYY-MM-DD'
+      const sectionDate = getDateForDay(task.section);
   
+      // Prepare the event object
       let event;
   
       if (task.duration && task.duration !== 'None') {
@@ -920,15 +952,15 @@ const getTasksForSection = (sectionId) => {
         const endDateTime = new Date(startDateTime.getTime() + durationInMinutes * 60000);
   
         event = {
-          summary: task.title,
+          summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`,
           description: task.description || '',
           start: {
             dateTime: startDateTime.toISOString(),
-            timeZone: 'UTC', // Adjust as needed
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
           end: {
             dateTime: endDateTime.toISOString(),
-            timeZone: 'UTC', // Adjust as needed
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         };
       } else {
@@ -938,7 +970,7 @@ const getTasksForSection = (sectionId) => {
         endDate.setDate(endDate.getDate() + 1);
   
         event = {
-          summary: task.title,
+          summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`,
           description: task.description || '',
           start: {
             date: startDate.toISOString().split('T')[0],
@@ -950,21 +982,43 @@ const getTasksForSection = (sectionId) => {
       }
   
       try {
+        const method = task.googleCalendarEventId ? 'PUT' : 'POST';
+        const body = {
+          event,
+          eventId: task.googleCalendarEventId,
+        };
+  
         const response = await fetch('/api/google-calendar', {
-          method: 'POST',
-          credentials: 'include', // Add this line
+          method,
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(event),
+          body: JSON.stringify(body),
         });
   
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(`Error adding task "${task.title}" to Google Calendar:`, JSON.stringify(errorData, null, 2));
-          // Optionally handle errors individually
+          console.error(`Error syncing task "${task.title}" to Google Calendar:`, errorData);
+          continue;
         }
+  
+        const data = await response.json();
+        const eventId = data.eventId;
+  
+        // Update the task in local state with the new googleCalendarEventId
+        setTasks((prevTasks) =>
+          prevTasks.map((t) =>
+            t.id === task.id ? { ...t, googleCalendarEventId: eventId } : t
+          )
+        );
+  
+        await fetch('/api/tasks', {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: task.id, googleCalendarEventId: eventId }),
+        });
       } catch (error) {
-        console.error(`Error adding task "${task.title}" to Google Calendar:`, error);
-        // Optionally handle errors individually
+        console.error(`Error syncing task "${task.title}" to Google Calendar:`, error);
       }
     }
   
@@ -1038,106 +1092,114 @@ const getTasksForSection = (sectionId) => {
     };
   }, []);
 
+  // Add this new function to handle background clicks
+  const handleBackgroundClick = useCallback((e) => {
+    // Check if the click is on the background (not on a task)
+    if (e.target.closest('.task-item') === null) {
+      setSelectedTasks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Add event listener when the component mounts
+    document.addEventListener('click', handleBackgroundClick);
+
+    // Remove event listener when the component unmounts
+    return () => {
+      document.removeEventListener('click', handleBackgroundClick);
+    };
+  }, [handleBackgroundClick]);
+
   return (
     isMounted ? (
-      <>
-        {selectedTasks.length > 0 && (
-          <div className="fixed top-0 left-0 right-0 bg-slate-900 text-white p-2 text-center z-50">
-            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
-            Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
-          </div>
-        )}
-        
-        {/* Logout button */}
-        <button 
-          onClick={() => signOut()} 
-          className="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded z-50"
-        >
-          Logout
-        </button>
-
-        {/* Sync and Current Week buttons */}
-        <div className="fixed top-4 left-4 flex flex-col space-y-2 z-50">
-          <button
-            onClick={syncWeekTasksToGoogleCalendar}
-            className="flex items-center bg-blue-600 text-white px-4 py-2 rounded"
-          >
-            <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
-            Sync Week's Tasks
-          </button>
-          <button
-            onClick={() => setWeekOffset(0)}
-            className="bg-green-600 text-white px-4 py-2 rounded"
-          >
-            Current Week
-          </button>
-        </div>
-
-        <div className="flex justify-center items-start min-h-screen bg-gray-900 p-4 relative">
-          {/* Left Button */}
-          <Button 
-            onClick={() => setWeekOffset(weekOffset - 1)} 
-            className="fixed left-4 top-1/2 transform -translate-y-1/2 z-20"
-          >
-            &lt;
-          </Button>
-
-          <div className="w-full max-w-4xl bg-gray-800 shadow-lg rounded-lg p-6 text-gray-200 relative">
-            <Header />
-            <div className="flex mb-4 items-end">
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        {/* Fixed header for task addition */}
+        <div className="fixed top-0 left-0 right-0 mb-6 flex items-center space-x-4 bg-white p-4 rounded shadow-md z-[9999]">
+          <Image src="/tasknest-logo.png" alt="TaskNest Logo" width={150} height={50} className="mr-4" />
+          
+          {isEditingSections ? (
+            <div className="flex-grow flex items-center space-x-4">
+              <Input
+                type="text"
+                value={newSectionName}
+                onChange={(e) => setNewSectionName(e.target.value)}
+                placeholder="New section name"
+                className="flex-grow h-[40px] text-lg"
+                style={{ color: '#303641' }}
+              />
+              <Button 
+                onClick={() => addSection('section')} 
+                className="flex items-center bg-orange-500 text-white hover:bg-orange-600 h-[40px] text-lg px-4"
+              >
+                <Plus className="mr-2 h-5 w-5" /> Add Section
+              </Button>
+              <Button 
+                onClick={() => addSection('divider')} 
+                className="flex items-center bg-gray-500 text-white hover:bg-gray-600 h-[40px] text-lg px-4"
+              >
+                <Plus className="mr-2 h-5 w-5" /> Add Divider
+              </Button>
+            </div>
+          ) : (
+            <div className="flex-grow flex items-center space-x-4">
               <Input
                 type="text"
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
                 placeholder="Enter new task"
-                className="mr-2"
+                className="flex-grow focus-visible:ring-orange-500"
+                style={{ color: '#303641' }}
               />
-              <Select value={selectedTag} onValueChange={setSelectedTag}>
-                <SelectTrigger className="w-[180px] mr-2">
-                  <SelectValue placeholder="Select a tag" />
-                </SelectTrigger>
-                <SelectContent>
-                  {tags.map(tag => (
-                    <SelectItem key={tag.id} value={tag.id.toString()}>
-                      <div className="flex items-center">
-                        <div
-                          className="w-3 h-3 rounded-full mr-2"
-                          style={{ backgroundColor: tag.color }}
-                        ></div>
-                        {tag.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={taskDuration} onValueChange={handleDurationChange}>
-                <SelectTrigger className="w-[180px] mr-2">
-                  <SelectValue placeholder="Select duration" />
-                </SelectTrigger>
-                <SelectContent>
-                  {durationOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {/* Custom Duration Input */}
+              <div className="relative">
+                <Select value={selectedTag} onValueChange={setSelectedTag}>
+                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                    <SelectValue placeholder="Tag" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
+                    {tags.map(tag => (
+                      <SelectItem key={tag.id} value={tag.id.toString()} className="py-2" style={{ color: '#303641' }}>
+                        <div className="flex items-center">
+                          <div
+                            className="w-4 h-4 rounded-full flex-shrink-0 mr-2"
+                            style={{ backgroundColor: tag.color }}
+                          ></div>
+                          <span className="truncate">{tag.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="relative">
+                <Select value={taskDuration} onValueChange={handleDurationChange}>
+                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                    <SelectValue placeholder="Duration" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
+                    {durationOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value} className="py-2" style={{ color: '#303641' }}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {taskDuration === 'custom' && (
                 <Input
                   type="text"
                   value={customDuration}
                   onChange={(e) => setCustomDuration(e.target.value)}
-                  placeholder="Enter duration in minutes"
-                  className="mr-2"
+                  placeholder="Custom duration"
+                  className="w-40 h-[40px] text-lg"
+                  style={{ color: '#303641' }}
                 />
               )}
               <Input
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="mr-2"
+                className="w-[200px] h-[40px] text-lg"
+                style={{ color: '#303641' }}
               />
               <Button
                 onClick={() => {
@@ -1150,131 +1212,140 @@ const getTasksForSection = (sectionId) => {
                     displayDate: null,
                     duration: durationValue,
                   };
-                  console.log('Task data before adding:', JSON.stringify(taskData));
                   if (!taskData.title) {
-                    console.error('Task title is empty');
                     alert('Please enter a task title');
                     return;
                   }
                   addTask(taskData);
                 }}
-                className="px-4 py-2"
+                className="bg-orange-500 text-white hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-opacity-50 h-[40px] text-lg"
               >
                 Add
               </Button>
             </div>
-               
-            {/* Edit Sections and Edit Tags buttons */}
-            <div className="fixed bottom-4 right-4 flex space-x-2">
-              
-              <Button onClick={() => setIsEditingSections(!isEditingSections)}>
-                <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
-              </Button>
-              <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" /> Edit Tags
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>Edit Tags</DialogTitle>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    {tags.map(tag => (
-                      <div key={tag.id} className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <div
-                            className="w-4 h-4 rounded-full mr-2"
-                            style={{ backgroundColor: tag.color }}
-                          ></div>
-                          <span>{tag.name}</span>
-                        </div>
-                        <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                    <div className="flex items-center">
-                      <Input
-                        type="text"
-                        value={newTagName}
-                        onChange={(e) => setNewTagName(e.target.value)}
-                        placeholder="New tag name"
-                        className="mr-2"
-                      />
-                      <Input
-                        type="color"
-                        value={newTagColor}
-                        onChange={(e) => setNewTagColor(e.target.value)}
-                        className="w-12"
-                      />
-                      <Button onClick={addTag} className="ml-2">
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+          )}
+        </div>
+        
+        {/* Main content area */}
+        <div className="pt-[110px] pb-20 px-4"> {/* Adjust the pt-24 value if needed */}
+          {selectedTasks.length > 0 && (
+            <div className="fixed top-[110px] left-1/2 transform -translate-x-1/2 z-50 bg-orange-500 text-white p-3 text-center mb-4 rounded">              
+            <span className="font-semibold">Task Selection Mode:</span> {selectedTasks.length} task(s) selected.
+              Use Shift+Click to select/deselect tasks. Click on the background to clear all selections.
             </div>
+          )}
+          
+          <div className="flex justify-center items-start relative">
+            {/* Left Button */}
+            <Button 
+              onClick={() => setWeekOffset(weekOffset - 1)} 
+              variant="outline"
+              className="fixed left-4 top-1/2 transform -translate-y-1/2 z-20 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
+            >
+              &lt;
+            </Button>
 
-            {isEditingSections && (
-              <div className="mb-4">
-                <Input
-                  type="text"
-                  value={newSectionName}
-                  onChange={(e) => setNewSectionName(e.target.value)}
-                  placeholder="New section name"
-                  className="mr-2"
-                />
-                <Button onClick={() => addSection('section')} className="mr-2">
-                  Add Section
-                </Button>
-                <Button onClick={() => addSection('divider')}>
-                  Add Divider
-                </Button>
-              </div>
-            )}
-
-            <div className="mt-4">
+            <div className="w-full max-w-4xl bg-white shadow-lg rounded-lg p-6 text-gray-800 relative">
+              <Header />
+              {/* ... (existing task list rendering code) */}
               {renderNestedSections(nestedSections)}
             </div>
-            {showCalendarPopup && (
-            <Dialog open={showCalendarPopup} onOpenChange={setShowCalendarPopup}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Task to Google Calendar</DialogTitle>
-                </DialogHeader>
-                <div className="py-4">
-                  <p>Do you want to add this task to Google Calendar?</p>
-                  <div className="flex justify-end mt-4">
-                    <Button onClick={() => setShowCalendarPopup(false)} className="mr-2">
-                      No
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        addToGoogleCalendar(taskToAddToCalendar);
-                        setShowCalendarPopup(false);
-                      }}
-                    >
-                      Yes
+
+            {/* Right Button */}
+            <Button 
+              onClick={() => setWeekOffset(weekOffset + 1)} 
+              variant="outline"
+              className="fixed right-4 top-1/2 transform -translate-y-1/2 z-20 bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
+            >
+              &gt;
+            </Button>
+          </div>
+        </div>
+        {/* Edit Sections and Edit Tags buttons */}
+        <div className="fixed bottom-4 right-4 flex space-x-2">
+          <Button 
+            onClick={() => setIsEditingSections(!isEditingSections)}
+            variant="outline"
+            className="bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
+          >
+            <Edit3 className="mr-2 h-4 w-4" /> {isEditingSections ? 'Finish Editing' : 'Edit Sections'}
+          </Button>
+          <Dialog open={isTagModalOpen} onOpenChange={setIsTagModalOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline"
+                className="bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Edit Tags
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Edit Tags</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                {tags.map(tag => (
+                  <div key={tag.id} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div
+                        className="w-4 h-4 rounded-full mr-2"
+                        style={{ backgroundColor: tag.color }}
+                      ></div>
+                      <span>{tag.name}</span>
+                    </div>
+                    <Button onClick={() => deleteTag(tag.id)} className="ml-2" variant="destructive">
+                      <Trash className="h-4 w-4" />
                     </Button>
                   </div>
+                ))}
+                <div className="flex items-center">
+                  <Input
+                    type="text"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    placeholder="New tag name"
+                    className="mr-2"
+                  />
+                  <Input
+                    type="color"
+                    value={newTagColor}
+                    onChange={(e) => setNewTagColor(e.target.value)}
+                    className="w-12"
+                  />
+                  <Button onClick={addTag} className="ml-2">
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 </div>
-              </DialogContent>
-            </Dialog>
-          )}
-          </div>
-
-          {/* Right Button */}
-          <Button 
-            onClick={() => setWeekOffset(weekOffset + 1)} 
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 z-20"
-          >
-            &gt;
-          </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
-      </>
+        
+        {/* Logout button */}
+        <button 
+          onClick={() => signOut()} 
+          className="fixed top-[110px] right-4 bg-red-500 text-white px-4 py-2 rounded z-50 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+        >
+          Logout
+        </button>
+
+        {/* Sync and Current Week buttons */}
+        <div className="fixed top-[110px] left-4 flex flex-col space-y-2 z-50">
+          <button
+            onClick={syncWeekTasksToGoogleCalendar}
+            className="shadow-xl flex items-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+          >
+            <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
+            Sync Week's Tasks
+          </button>
+          <button
+            onClick={() => setWeekOffset(0)}
+            className="bg-stone-500 text-white px-4 py-2 rounded hover:bg-stone-600 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:ring-opacity-50"
+          >
+            Current Week
+          </button>
+        </div>
+      </div>
     ) : null
   );
 };

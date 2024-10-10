@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash, Calendar } from 'lucide-react';
+import { Trash, Calendar, Check, Edit } from 'lucide-react';
 import { Button } from './button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select';
@@ -26,6 +26,7 @@ const TaskItem = ({
   isUpdating,
   isEditing,
   onUpdateTask,
+  onStartEditing, // Add this line
   tags,
   durationOptions,
   onAddToGoogleCalendar,
@@ -49,38 +50,36 @@ const TaskItem = ({
   };
 
   return (
-    <div
-      className={`task-item mb-2 p-2 border-2 rounded flex flex-col ${
-        task.completed ? 'bg-stone-800 text-zinc-400' : ''
-      } ${isSelected ? 'bg-slate-900 text-white' : ''} ${isUpdating ? 'opacity-50' : ''}`}
-      style={{ borderColor: task.tag?.color || '#000000' }}
-      draggable={!isEditing}
-      onDragStart={!isEditing ? handleDragStartLocal : undefined}
-      onClick={(e) => onSelect(task.id, e)}
-    >
+      <div
+        className={`bg-white rounded-lg shadow-md mb-2 flex items-stretch ${isSelected ? 'ring-2 ring-blue-500' : ''} ${isUpdating ? 'opacity-50' : ''} task-item`}
+        draggable={!isEditing}
+        onDragStart={!isEditing ? handleDragStartLocal : undefined}
+        onClick={(e) => {
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            e.stopPropagation(); // Prevent the click from bubbling up
+            onSelect(task.id, e);
+          }
+        }}
+      >
+      {/* Left bar with tag color */}
+      <div 
+        className="w-2 rounded-l-lg flex-shrink-0" 
+        style={{ backgroundColor: task.tag?.color || '#e5e7eb' }}
+      ></div>
+
       {isEditing ? (
         // Render editable fields
-        <>
+        <div className="flex-grow px-4 py-3">
           <div className="flex items-center mb-2">
             <Input
               type="text"
               value={editedTitle}
               onChange={(e) => setEditedTitle(e.target.value)}
               placeholder="Enter task title"
-              className="mr-2 flex-grow"
+              className="mr-2 flex-grow border-gray-300 focus:border-blue-500 focus:ring-blue-500"
             />
-            <Button onClick={() => onUpdateTask({
-              ...task,
-              title: editedTitle,
-              tag: editedTag,
-              duration: editedDuration === 'custom' ? editedCustomDuration : editedDuration,
-              dueDate: editedDueDate,
-            })}>
-              Update
-            </Button>
           </div>
           <div className="flex items-center mb-2">
-            {/* Tag Select */}
             <Select value={editedTag} onValueChange={setEditedTag}>
               <SelectTrigger className="w-[180px] mr-2">
                 <SelectValue placeholder="Select a tag" />
@@ -99,7 +98,6 @@ const TaskItem = ({
                 ))}
               </SelectContent>
             </Select>
-            {/* Duration Select */}
             <Select value={editedDuration} onValueChange={handleDurationChange}>
               <SelectTrigger className="w-[180px] mr-2">
                 <SelectValue placeholder="Select duration" />
@@ -121,7 +119,6 @@ const TaskItem = ({
                 className="mr-2"
               />
             )}
-            {/* Due Date */}
             <Input
               type="date"
               value={editedDueDate}
@@ -129,58 +126,114 @@ const TaskItem = ({
               className="mr-2"
             />
           </div>
-        </>
+          <Button 
+            onClick={() => onUpdateTask({
+              ...task,
+              title: editedTitle,
+              tag: editedTag,
+              duration: editedDuration === 'custom' ? editedCustomDuration : editedDuration,
+              dueDate: editedDueDate,
+            })}
+            className="bg-blue-500 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+          >
+            Update
+          </Button>
+        </div>
       ) : (
         // Render normal task view
-        <div className="flex items-center justify-between">
-          <div className="flex items-center flex-grow">
-            <input
-              type="checkbox"
-              checked={task.completed}
-              onChange={() => onUpdate({ ...task, completed: !task.completed })}
-              className="mr-2"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <span className={`${task.completed ? 'line-through' : ''} flex-grow`}>
-              {task.title || 'Untitled Task'}
-              {task.tag?.name && (
-                <span className={`ml-2 text-sm ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-                  ({task.tag.name})
+        <div className="flex-grow flex items-center">
+          <div className="flex-grow px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className={`text-lg font-medium text-gray-800 ${task.completed ? 'line-through' : ''}`}>
+                  {task.title || 'Untitled Task'}
                 </span>
-              )}
-            </span>
+                <div className="text-sm font-medium" style={{ color: task.tag?.color || '#4B5563' }}>
+                  {task.tag?.name}
+                </div>
+              </div>
+              <div className="flex items-center">
+                <div className="flex flex-col items-end mr-2">
+                  <div className="text-sm text-gray-500">
+                    {task.duration ? formatDuration(task.duration) : 'No Duration'}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Due: {task.dueDate || 'No Due Date'}
+                  </div>
+                </div>
+                
+                {/* New divider between duration/due date and action buttons */}
+                <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                
+                <div className="flex items-center">
+                  {task.dueDate && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddToGoogleCalendar(task);
+                        }}
+                        className="text-blue-500 hover:text-blue-600 focus:outline-none p-1"
+                        title="Add to Calendar" // Added tooltip
+                      >
+                        <Calendar className="h-4 w-4" />
+                      </button>
+                      <div className="h-4 w-px bg-gray-300 mx-1"></div>
+                    </>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(task.id);
+                    }}
+                    className="text-red-500 hover:text-red-600 focus:outline-none p-1"
+                    title="Delete Task" // Added tooltip
+                  >
+                    <Trash className="h-4 w-4" />
+                  </button>
+
+                  <div className="h-4 w-px bg-gray-300 mx-1"></div>
+                  
+                  <div className="w-1"></div> {/* Additional space before edit button */}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartEditing(task.id);
+                    }}
+                    className="text-gray-500 hover:text-gray-600 focus:outline-none"
+                    title="Edit Task" // Added tooltip
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+
+                            {/* Divider before checkbox */}
+                  <div className="h-6 w-px bg-gray-300 mx-2"></div>
+                  
+                  {/* Checkbox */}
+                  <div className="flex items-center px-1 ">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdate({ ...task, completed: !task.completed });
+                      }}
+                      className={`w-6 h-6 rounded-sm border-2 flex items-center justify-center
+                        ${task.completed 
+                          ? 'bg-orange-600 border-orange-600' 
+                          : 'border-gray-300 hover:border-orange-600'}`}
+                    >
+                      {task.completed && <Check className="text-white w-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center">
-            <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-              Due: {task.dueDate || 'No Due Date'}
-            </span>
-            <span className={`text-sm mr-2 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-              Duration: {task.duration ? formatDuration(task.duration) : 'No Duration'}
-            </span>
-            {task.dueDate && (
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddToGoogleCalendar(task);
-                }}
-                className="mr-2"
-              >
-                <Calendar className="h-4 w-4" />
-              </Button>
-            )}
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(task.id);
-              }}
-              className="mr-2"
-            >
-              <Trash className="h-4 w-4" />
-            </Button>
-          </div>
+          
+
         </div>
       )}
-      {isUpdating && <span className="ml-2">Updating...</span>}
+
+      {isUpdating && <span className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-white bg-opacity-50 text-blue-500">Updating...</span>}
     </div>
   );
 };
