@@ -1336,7 +1336,7 @@ const startEditingTask = (taskId) => {
             className="shadow-xl flex items-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
           >
             <img src="/google-calendar-logo.png" alt="Google Calendar" className="h-6 w-6 mr-2" />
-            Sync Week&aposs Tasks
+            Sync Week&apos;s Tasks
           </button>
           <button
             onClick={() => setWeekOffset(0)}
