@@ -15,10 +15,6 @@ export default function HomePage() {
     }
   }, [status, router]);
 
-  if (status === 'loading') {
-    return <div>Loading...</div>; // Or a loading spinner
-  }
-
   if (!session) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">

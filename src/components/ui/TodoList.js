@@ -874,42 +874,32 @@ const startEditingTask = (taskId) => {
       return;
     }
 
-    let event = {
-      summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`, // Add tag to the title
-      description: task.description || '',
-      start: {
-        dateTime: new Date(task.dueDate).toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      end: {
-        dateTime: new Date(task.dueDate).toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-    };
+    const startDateTime = new Date(task.dueDate);
+    let endDateTime;
 
     if (task.duration && task.duration !== 'None') {
       const durationInMinutes = parseInt(task.duration);
       if (!isNaN(durationInMinutes)) {
-        const endTime = new Date(new Date(task.dueDate).getTime() + durationInMinutes * 60000);
-        event.end.dateTime = endTime.toISOString();
+        endDateTime = new Date(startDateTime.getTime() + durationInMinutes * 60000);
+      } else {
+        endDateTime = new Date(startDateTime.getTime() + 60 * 60000); // Default 1 hour
       }
     } else {
-      // Handle tasks without duration as all-day events
-      const startDate = new Date(task.dueDate);
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 1);
-
-      event = {
-        summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`, // Add tag to the title
-        description: task.description || '',
-        start: {
-          date: startDate.toISOString().split('T')[0],
-        },
-        end: {
-          date: endDate.toISOString().split('T')[0],
-        },
-      };
+      endDateTime = new Date(startDateTime.getTime() + 60 * 60000); // Default 1 hour
     }
+
+    let event = {
+      summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`,
+      description: task.description || '',
+      start: {
+        dateTime: startDateTime.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      end: {
+        dateTime: endDateTime.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    };
 
     try {
       const response = await fetch('/api/google-calendar', {
