@@ -1,6 +1,6 @@
 # TaskNest: Advanced Todo List Application
 
-![TaskNest Logo](public/tasknest-logo.png)
+![TaskNest Logo](public/TaskNest_WhiteText.png)
 
 ## Table of Contents
 
