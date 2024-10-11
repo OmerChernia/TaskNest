@@ -885,28 +885,44 @@ const startEditingTask = (taskId) => {
         endDateTime = new Date(startDateTime.getTime() + 60 * 60000); // Default 1 hour
       }
     } else {
-      endDateTime = new Date(startDateTime.getTime() + 60 * 60000); // Default 1 hour
+      // If no duration, make it an all-day event
+      endDateTime = new Date(startDateTime);
+      endDateTime.setDate(endDateTime.getDate() + 1); // End date is the next day for all-day events
     }
 
     let event = {
       summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`,
       description: task.description || '',
-      start: {
+    };
+
+    if (task.duration && task.duration !== 'None') {
+      // Timed event
+      event.start = {
         dateTime: startDateTime.toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-      end: {
+      };
+      event.end = {
         dateTime: endDateTime.toISOString(),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      },
-    };
+      };
+    } else {
+      // All-day event
+      event.start = {
+        date: startDateTime.toISOString().split('T')[0],
+      };
+      event.end = {
+        date: endDateTime.toISOString().split('T')[0],
+      };
+    }
+
+    console.log('Event object to be sent:', event); // Add this line
 
     try {
       const response = await fetch('/api/google-calendar', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
+        body: JSON.stringify({ event }), // Wrap event in an object
       });
 
       if (!response.ok) {
@@ -1137,12 +1153,12 @@ const startEditingTask = (taskId) => {
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
                 placeholder="Enter new task"
-                className="flex-grow focus-visible:ring-orange-500"
+                className="flex-grow focus-visible"
                 style={{ color: '#303641' }}
               />
               <div className="relative">
                 <Select value={selectedTag} onValueChange={setSelectedTag}>
-                  <SelectTrigger className="w-[205px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
                     <SelectValue placeholder="Tag" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -1162,7 +1178,7 @@ const startEditingTask = (taskId) => {
               </div>
               <div className="relative">
                 <Select value={taskDuration} onValueChange={handleDurationChange}>
-                  <SelectTrigger className="w-[205px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
                     <SelectValue placeholder="Duration" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -1188,7 +1204,7 @@ const startEditingTask = (taskId) => {
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-[205px] h-[40px] text-lg"
+                className="w-[200px] h-[40px] text-lg"
                 style={{ color: '#303641' }}
               />
               <Button

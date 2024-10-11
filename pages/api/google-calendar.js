@@ -14,8 +14,50 @@ export default async function handler(req, res) {
 
   const accessToken = token.accessToken;
 
+  console.log('Received request body:', req.body); // Add this line
+
+  const { event } = req.body;
+
+  console.log('Extracted event object:', event); // Add this line
+
+  if (!event || !event.start) {
+    return res.status(400).json({ error: 'Invalid event data: Missing start information' });
+  }
+
   try {
-    const { event, eventId } = req.body;
+    let calendarEvent;
+
+    if (event.start.dateTime && event.end.dateTime) {
+      // Timed event
+      calendarEvent = {
+        summary: event.summary,
+        description: event.description,
+        start: {
+          dateTime: event.start.dateTime,
+          timeZone: event.start.timeZone,
+        },
+        end: {
+          dateTime: event.end.dateTime,
+          timeZone: event.end.timeZone,
+        },
+      };
+    } else if (event.start.date && event.end.date) {
+      // All-day event
+      calendarEvent = {
+        summary: event.summary,
+        description: event.description,
+        start: {
+          date: event.start.date,
+        },
+        end: {
+          date: event.end.date,
+        },
+      };
+    } else {
+      throw new Error('Invalid event data: Missing start or end time/date');
+    }
+
+    console.log('Calendar event to be created:', calendarEvent); // Add this line
 
     switch (req.method) {
       case 'POST':
@@ -26,7 +68,7 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(event),
+          body: JSON.stringify(calendarEvent),
         });
 
         if (!createResponse.ok) {
@@ -53,7 +95,7 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(event),
+          body: JSON.stringify(calendarEvent),
         });
 
         if (updateResponse.ok) {
@@ -67,7 +109,7 @@ export default async function handler(req, res) {
               Authorization: `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(event),
+            body: JSON.stringify(calendarEvent),
           });
 
           if (!recreateResponse.ok) {

@@ -9,7 +9,7 @@ function formatDuration(duration) {
   if (isNaN(mins)) return duration; // Handle custom text
   if (mins >= 60) {
     const hours = Math.floor(mins / 60);
-    
+
     const remainingMins = mins % 60;
     return `${hours} hr${hours > 1 ? 's' : ''}${remainingMins ? ` ${remainingMins} min` : ''}`;
   } else {
@@ -52,7 +52,7 @@ const TaskItem = ({
 
   return (
       <div
-        className={`bg-white rounded-lg shadow-md mb-2 flex items-stretch ${isSelected ? 'ring-2 ring-blue-500' : ''} ${isUpdating ? 'opacity-50' : ''} task-item`}
+        className={`bg-white rounded-lg shadow-md mb-2 flex items-stretch ${isSelected ? 'ring-2 ring-orange-500' : ''} ${isUpdating ? 'opacity-50' : ''} task-item`}
         draggable={!isEditing}
         onDragStart={!isEditing ? handleDragStartLocal : undefined}
         onClick={(e) => {
