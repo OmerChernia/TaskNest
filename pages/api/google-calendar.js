@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   console.log('Received request body:', req.body); // Add this line
 
-  const { event } = req.body;
+  const { event, eventId } = req.body;  // Add this line
 
   console.log('Extracted event object:', event); // Add this line
 
@@ -119,15 +119,12 @@ export default async function handler(req, res) {
           }
 
           const recreatedEvent = await recreateResponse.json();
-
-          // Return the new eventId to the frontend
           res.status(200).json({ eventId: recreatedEvent.id });
         } else {
           const errorData = await updateResponse.json();
           console.error('Google Calendar API error on update:', errorData);
           throw new Error(errorData.error.message || 'Failed to update event');
         }
-
         break;
 
       default:
