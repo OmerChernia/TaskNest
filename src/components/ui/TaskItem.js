@@ -9,6 +9,7 @@ function formatDuration(duration) {
   if (isNaN(mins)) return duration; // Handle custom text
   if (mins >= 60) {
     const hours = Math.floor(mins / 60);
+    
     const remainingMins = mins % 60;
     return `${hours} hr${hours > 1 ? 's' : ''}${remainingMins ? ` ${remainingMins} min` : ''}`;
   } else {
