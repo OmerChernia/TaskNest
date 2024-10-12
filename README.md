@@ -2,6 +2,10 @@
 
 ![TaskNest Logo](public/TaskNest_WhiteText.png)
 
+![TaskNest Demo](public/TaskNestVideoGuide.gif)
+
+For a comprehensive guide on how to use TaskNest, check out our [full video tutorial](https://youtu.be/3j2eApYxfgc?si=7vLtisouR46DI2g9).
+
 ## Table of Contents
 
 1. [Introduction](#introduction)
@@ -37,7 +41,7 @@ TaskNest is a sophisticated, feature-rich todo list application designed to boos
 
 ## Live Demo
 
-Experience TaskNest in action: [TaskNest Live Demo](https://taskmaster-pro.vercel.app)
+Experience TaskNest in action: [TaskNest Live Demo](https://tasknest.org)
 
 ## Technologies Used
 

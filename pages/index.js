@@ -12,13 +12,32 @@ export default function HomePage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
+      // Any authenticated-only logic here
     }
   }, [status, router]);
+
+  const YouTubeVideo = () => (
+    <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md mb-8">
+      <div className="aspect-w-16 aspect-h-9">
+        <iframe 
+          width="560" 
+          height="315" 
+          src="https://www.youtube.com/embed/3j2eApYxfgc?si=mILLau3rNYCHPhNA" 
+          title="YouTube video player" 
+          frameBorder="0" 
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+          referrerPolicy="strict-origin-when-cross-origin" 
+          allowFullScreen
+          className="w-full h-full"
+        ></iframe>
+      </div>
+    </div>
+  );
 
   if (!session) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-        <div className="p-8 bg-white rounded-lg shadow-md">
+        <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md mb-8">
           <div className="flex items-center justify-center mb-6">
             <Image src="/tasknest-logo.png" alt="TaskNest Logo" width={300} height={100} />
           </div>
@@ -30,9 +49,15 @@ export default function HomePage() {
             Sign In
           </button>
         </div>
+        <YouTubeVideo />
       </div>
     );
   }
 
-  return <TodoList />;
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+      <YouTubeVideo />
+      <TodoList />
+    </div>
+  );
 }

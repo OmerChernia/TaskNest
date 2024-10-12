@@ -1158,7 +1158,7 @@ const startEditingTask = (taskId) => {
               />
               <div className="relative">
                 <Select value={selectedTag} onValueChange={setSelectedTag}>
-                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                  <SelectTrigger className="w-[205px] h-[40px] text-lg" style={{ color: '#303641' }}>
                     <SelectValue placeholder="Tag" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -1178,7 +1178,7 @@ const startEditingTask = (taskId) => {
               </div>
               <div className="relative">
                 <Select value={taskDuration} onValueChange={handleDurationChange}>
-                  <SelectTrigger className="w-[200px] h-[40px] text-lg" style={{ color: '#303641' }}>
+                  <SelectTrigger className="w-[205px] h-[40px] text-lg" style={{ color: '#303641' }}>
                     <SelectValue placeholder="Duration" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -1204,7 +1204,7 @@ const startEditingTask = (taskId) => {
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-[200px] h-[40px] text-lg"
+                className="w-[205px] h-[40px] text-lg"
                 style={{ color: '#303641' }}
               />
               <Button
