@@ -367,11 +367,12 @@ const getWeekStartDateForDate = (dateStr) => {
       const updatedTask = {
         ...updatedTaskData,
         tag: fullTag || null,
+        googleCalendarEventId: null, // Clear the Google Calendar event ID
       };
   
       const response = await fetch('/api/tasks', {
         method: 'PUT',
-        credentials: 'include', // Include cookies
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -589,6 +590,8 @@ const getWeekStartDateForDate = (dateStr) => {
     return sections.map((item, index) => {
       const currentPath = [...path, index];
       const isHovered = hoveredSectionPath === JSON.stringify(currentPath);
+      const isInWeekSection = weekSectionIds.includes(item.id.toLowerCase());
+
 
       return (
         <div
@@ -667,10 +670,11 @@ const getWeekStartDateForDate = (dateStr) => {
                         isUpdating={updatingTaskId === task.id}
                         isEditing={editingTaskId === task.id}
                         onUpdateTask={handleTaskUpdate}
-                        onStartEditing={startEditingTask} // Add this line
+                        onStartEditing={startEditingTask}
                         tags={tags}
                         durationOptions={durationOptions}
                         onAddToGoogleCalendar={addToGoogleCalendar}
+                        isInWeekSection={isInWeekSection}
                       />
                     ))}
                       </div>
@@ -869,14 +873,22 @@ const startEditingTask = (taskId) => {
   };
 
   const addToGoogleCalendar = async (task) => {
-    if (!task.dueDate) {
-      alert('This task does not have a due date and cannot be added to the calendar.');
+    // Determine the event date based on dueDate or section date
+    let eventDate;
+    if (task.dueDate) {
+      eventDate = task.dueDate;
+    } else if (weekSectionIds.includes(task.section)) {
+      // Use the date associated with the section
+      eventDate = getDateForDay(task.section);
+    } else {
+      alert('This task does not have a date and cannot be added to the calendar.');
       return;
     }
-
-    const startDateTime = new Date(task.dueDate);
+  
+    // Proceed to create the event using eventDate
+    const startDateTime = new Date(eventDate);
     let endDateTime;
-
+  
     if (task.duration && task.duration !== 'None') {
       const durationInMinutes = parseInt(task.duration);
       if (!isNaN(durationInMinutes)) {
@@ -889,12 +901,12 @@ const startEditingTask = (taskId) => {
       endDateTime = new Date(startDateTime);
       endDateTime.setDate(endDateTime.getDate() + 1); // End date is the next day for all-day events
     }
-
+  
     let event = {
       summary: `${task.title}${task.tag ? ` (${task.tag.name})` : ''}`,
       description: task.description || '',
     };
-
+  
     if (task.duration && task.duration !== 'None') {
       // Timed event
       event.start = {
@@ -914,29 +926,47 @@ const startEditingTask = (taskId) => {
         date: endDateTime.toISOString().split('T')[0],
       };
     }
-
-    console.log('Event object to be sent:', event); // Add this line
-
+  
+    console.log('Event object to be sent:', event);
+  
     try {
       const response = await fetch('/api/google-calendar', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event }), // Wrap event in an object
+        body: JSON.stringify({ event }),
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to add event to Google Calendar');
       }
-
+  
+      const data = await response.json();
+      const eventId = data.eventId;
+  
+      // Update the task in local state with the new googleCalendarEventId
+      setTasks((prevTasks) =>
+        prevTasks.map((t) =>
+          t.id === task.id ? { ...t, googleCalendarEventId: eventId } : t
+        )
+      );
+  
+      // Update the task in the backend
+      await fetch('/api/tasks', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, googleCalendarEventId: eventId }),
+      });
+  
       alert('Task added to Google Calendar successfully!');
     } catch (error) {
       console.error('Error adding task to Google Calendar:', error);
       alert('Failed to add task to Google Calendar: ' + error.message);
     }
   };
-
+  
   const syncWeekTasksToGoogleCalendar = async () => {
     const weekSections = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const currentWeekKey = getWeekStartDate(weekOffset); // Get the current week's key

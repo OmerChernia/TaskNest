@@ -27,10 +27,11 @@ const TaskItem = ({
   isUpdating,
   isEditing,
   onUpdateTask,
-  onStartEditing, // Add this line
+  onStartEditing,
   tags,
   durationOptions,
   onAddToGoogleCalendar,
+  isInWeekSection,
 }) => {
   const [editedTitle, setEditedTitle] = useState(task.title || '');
   const [editedTag, setEditedTag] = useState(task.tag?.id || '');
@@ -167,15 +168,22 @@ const TaskItem = ({
                 <div className="h-6 w-px bg-gray-300 mx-1"></div>
                 
                 <div className="flex items-center">
-                  {task.dueDate && (
+                {(task.dueDate || isInWeekSection) && (
                     <>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onAddToGoogleCalendar(task);
                         }}
-                        className="text-blue-500 hover:text-blue-600 focus:outline-none p-1"
-                        title="Add to Calendar" // Added tooltip
+                        className={`p-1 focus:outline-none ${
+                          task.googleCalendarEventId
+                            ? 'text-green-500'
+                            : 'text-blue-500 hover:text-blue-600'
+                        }`}
+                        title={
+                          task.googleCalendarEventId ? 'Task synced to Calendar' : 'Add to Calendar'
+                        }
+                        disabled={!!task.googleCalendarEventId}
                       >
                         <Calendar className="h-4 w-4" />
                       </button>
