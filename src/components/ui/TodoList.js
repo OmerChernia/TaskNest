@@ -641,7 +641,14 @@ const getWeekStartDateForDate = (dateStr) => {
                         <ChevronRight className="w-4 h-4" />
                       )}
                     </button>
-                    <h2 className="text-xl font-bold">{renderSectionTitle(item)}</h2>
+                    <div className="section-header flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-semibold">{renderSectionTitle(item)}</h2>
+                        <span className="text-sm text-gray-500 font-medium">
+                          {calculateSectionDuration(getTasksForSection(item.id))}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   {isEditingSections && !defaultSectionIds.includes(item.id) && (
                   <Button
@@ -1145,6 +1152,50 @@ const startEditingTask = (taskId) => {
       document.removeEventListener('click', handleBackgroundClick);
     };
   }, [handleBackgroundClick]);
+
+  // Replace the calculateSectionDuration function with this corrected version
+  const calculateSectionDuration = (sectionTasks) => {
+    // Convert all durations to minutes for calculation
+    const totalMinutes = sectionTasks.reduce((sum, task) => {
+      // Handle different duration formats
+      if (!task.duration || task.duration === 'None') {
+        return sum; // Skip tasks with no duration
+      }
+      
+      // Check if the duration is in "hr min" format
+      if (typeof task.duration === 'string' && task.duration.includes('hr')) {
+        // Parse complex format like "1 hr 30 min"
+        const hourMatch = task.duration.match(/(\d+)\s*hr/);
+        const minuteMatch = task.duration.match(/(\d+)\s*min/);
+        
+        let minutes = 0;
+        if (hourMatch) minutes += parseInt(hourMatch[1]) * 60;
+        if (minuteMatch) minutes += parseInt(minuteMatch[1]);
+        
+        return sum + minutes;
+      }
+      
+      // Parse simple numeric duration (stored in minutes)
+      const minutes = parseFloat(task.duration);
+      if (isNaN(minutes)) {
+        return sum; // Skip if parsing fails
+      }
+      
+      return sum + minutes;
+    }, 0);
+    
+    // Format the output based on value
+    if (totalMinutes === 0) return '0:00';
+    
+    // Calculate hours and minutes
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = Math.floor(totalMinutes % 60);
+    
+    // Format with leading zeros for minutes when needed
+    const formattedMinutes = minutes.toString().padStart(2, '0');
+    
+    return `${hours}:${formattedMinutes}`;
+  };
 
   return (
     isMounted ? (
