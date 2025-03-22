@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import TodoList from '../src/components/ui/TodoList';
 import Image from 'next/image';
+import AppPurpose from '../src/components/AppPurpose';
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -31,6 +32,7 @@ export default function HomePage() {
           className="w-full h-full"
         ></iframe>
       </div>
+      <AppPurpose />
     </div>
   );
 
