@@ -886,6 +886,27 @@ const startEditingTask = (taskId) => {
     }
   };
 
+  const handleGoogleAuthError = (error) => {
+    // Check if the error is related to authentication
+    const isAuthError = 
+      error.message?.includes('authentication') || 
+      error.message?.includes('auth') ||
+      error.message?.includes('token') ||
+      error.message?.includes('unauthorized') ||
+      error.message?.includes('unauthenticated') ||
+      error.message?.includes('permission');
+    
+    if (isAuthError) {
+      // Show a more specific message for auth errors
+      alert("Your Google session has expired. Please log in again to continue using Google Calendar features.");
+      
+      // Redirect to login page or trigger sign out
+      signOut({ callbackUrl: '/login' });
+      return true;
+    }
+    return false;
+  };
+
   const addToGoogleCalendar = async (task) => {
     // Determine the event date based on dueDate or section date
     let eventDate;
@@ -953,6 +974,11 @@ const startEditingTask = (taskId) => {
   
       if (!response.ok) {
         const errorData = await response.json();
+        // Check specifically for auth errors in the response
+        if (response.status === 401 || response.status === 403 || 
+            errorData.error?.includes('auth') || errorData.error?.includes('token')) {
+          throw new Error('authentication_failed');
+        }
         throw new Error(errorData.error || 'Failed to add event to Google Calendar');
       }
   
@@ -977,6 +1003,13 @@ const startEditingTask = (taskId) => {
       alert('Task added to Google Calendar successfully!');
     } catch (error) {
       console.error('Error adding task to Google Calendar:', error);
+      
+      // Check if it's an auth error and handle it appropriately
+      if (handleGoogleAuthError(error)) {
+        return; // Exit early if it was an auth error that's been handled
+      }
+      
+      // For other errors, show the generic error message
       alert('Failed to add task to Google Calendar: ' + error.message);
     }
   };
@@ -1069,6 +1102,14 @@ const startEditingTask = (taskId) => {
         });
       } catch (error) {
         console.error(`Error syncing task "${task.title}" to Google Calendar:`, error);
+        
+        // Check if it's an auth error and handle it appropriately
+        if (handleGoogleAuthError(error)) {
+          return; // Exit the function entirely if auth error
+        }
+        
+        // For non-auth errors, continue with next task
+        continue;
       }
     }
   
