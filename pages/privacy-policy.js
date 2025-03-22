@@ -1,6 +1,8 @@
 import React from 'react';
 import { useRouter } from 'next/router';
 import Header from '../src/components/Header';
+import Image from 'next/image';
+
 
 export default function PrivacyPolicy() {
   const router = useRouter();
@@ -8,8 +10,7 @@ export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       <div className="fixed top-0 left-0 right-0 mb-6 flex items-center space-x-4 bg-white p-4 rounded shadow-md z-[9999]">
-        <img src="/tasknest-logo.png" alt="TaskNest Logo" width={150} height={50} className="mr-4" />
-      </div>
+      <Image src="/tasknest-logo.png" alt="TaskNest Logo" width={150} height={50} className="mr-4" />      </div>
       
       <div className="pt-[110px] pb-20 px-4">
         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6 text-gray-800">
