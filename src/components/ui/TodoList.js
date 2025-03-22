@@ -122,15 +122,25 @@ const TodoList = () => {
       if (!response.ok) throw new Error('Failed to fetch tasks');
       let data = await response.json();
       console.log('Fetched tasks:', data);
-  
+      
+      // Only add weekKey when absolutely necessary and preserve original section
       data = data.map(task => {
-        if (!task.weekKey) {
-          const taskWeekKey = task.dueDate ? getWeekStartDateForDate(task.dueDate) : getWeekStartDate(0);
-          return { ...task, weekKey: taskWeekKey };
+        // Keep the original section assignment
+        if (task.section) {
+          // Only add weekKey for week sections if it's missing
+          if (weekSectionIds.includes(task.section) && !task.weekKey) {
+            const taskWeekKey = task.dueDate ? 
+              getWeekStartDateForDate(task.dueDate) : 
+              getWeekStartDate(0);
+            return { ...task, weekKey: taskWeekKey };
+          }
+          return task;
+        } else {
+          // For tasks with no section, assign to new-tasks but don't add weekKey
+          return { ...task, section: 'new-tasks' };
         }
-        return task;
       });
-  
+
       setTasks(data);
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -439,8 +449,7 @@ const getWeekStartDateForDate = (dateStr) => {
   
     if (draggedTasks.length === 0) return;
   
-    // Show a loading indicator if needed
-    setUpdatingTaskId('batch-update'); // You can use a special value to indicate batch update
+    setUpdatingTaskId('batch-update');
   
     const updatedTasksPromises = draggedTasks.map(async (task) => {
       const updatedTask = {
@@ -451,13 +460,15 @@ const getWeekStartDateForDate = (dateStr) => {
       if (weekSectionIds.includes(targetSectionId)) {
         updatedTask.weekKey = getWeekStartDate(weekOffset);
       } else {
-        delete updatedTask.weekKey;
+        // Instead of just deleting weekKey, set it to null explicitly
+        updatedTask.weekKey = null;
       }
   
       try {
         const response = await fetch('/api/tasks', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify(updatedTask),
         });
   
@@ -482,7 +493,6 @@ const getWeekStartDateForDate = (dateStr) => {
       })
     );
   
-    // Reset dragged tasks and drop target
     setDraggedTasks([]);
     setDropTarget(null);
     setUpdatingTaskId(null);
@@ -720,21 +730,20 @@ const getWeekStartDateForDate = (dateStr) => {
 
 const getTasksForSection = (sectionId) => {
   if (weekSectionIds.includes(sectionId)) {
-    // Week section: filter tasks by weekKey
+    // Week section: filter tasks by section and weekKey
     const currentWeekKey = getWeekStartDate(weekOffset);
     return tasks.filter(task => {
-      const taskWeekKey = task.weekKey || currentWeekKey;
-      return (
-        String(task.section) === String(sectionId) &&
-        taskWeekKey === currentWeekKey
-      );
+      return String(task.section) === String(sectionId) && 
+             (!task.weekKey || task.weekKey === currentWeekKey);
     });
-  } else {
-    // Non-week section: include tasks regardless of weekKey
-    return tasks.filter(task =>
-      String(task.section) === String(sectionId) ||
-      (!task.section && sectionId === 'new-tasks')
+  } else if (sectionId === 'new-tasks') {
+    // New Tasks section: show tasks with 'new-tasks' section or no section
+    return tasks.filter(task => 
+      String(task.section) === 'new-tasks' || !task.section
     );
+  } else {
+    // Other sections: only show tasks explicitly assigned to this section
+    return tasks.filter(task => String(task.section) === String(sectionId));
   }
 };
 
@@ -1117,54 +1126,67 @@ const startEditingTask = (taskId) => {
   };
 
   const duplicateTask = async (taskOrTasks) => {
-  try {
-    const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
-    
-    for (const task of tasksToClone) {
-      const duplicatedTask = {
-        ...task,
-        id: undefined, // Remove id so a new one is generated
-        title: `${task.title || 'Untitled Task'}`,
-        completed: false,
-        createdAt: new Date().toISOString(),
-        section: task.section,
-      };
+    try {
+      const tasksToClone = Array.isArray(taskOrTasks) ? taskOrTasks : [taskOrTasks];
+      const newTasks = [];
+      
+      for (const task of tasksToClone) {
+        const duplicatedTask = {
+          ...task,
+          id: undefined, // Remove id so a new one is generated
+          title: `${task.title || 'Untitled Task'}`,
+          completed: false,
+          createdAt: new Date().toISOString(),
+          section: task.section,
+        };
 
-      // Assign weekKey only if the task is in a week section
-      if (weekSectionIds.includes(duplicatedTask.section)) {
-        duplicatedTask.weekKey = getWeekStartDate(weekOffset);
-      } else {
-        delete duplicatedTask.weekKey;
+        // Assign weekKey only if the task is in a week section
+        if (weekSectionIds.includes(duplicatedTask.section)) {
+          duplicatedTask.weekKey = getWeekStartDate(weekOffset);
+        } else {
+          // Set to null explicitly instead of deleting
+          duplicatedTask.weekKey = null;
+        }
+
+        console.log('Duplicating task:', duplicatedTask);
+
+        const response = await fetch('/api/tasks', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(duplicatedTask),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to duplicate task');
+        }
+
+        const addedTask = await response.json();
+        console.log('Received duplicated task from server:', addedTask);
+        
+        // Add to our collection of new tasks
+        newTasks.push(addedTask);
       }
-
-      console.log('Duplicating task:', duplicatedTask);
-
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(duplicatedTask),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to duplicate task');
-      }
-
-      const addedTask = await response.json();
-      console.log('Received duplicated task from server:', addedTask);
-
-      setTasks(prevTasks => [...prevTasks, addedTask]);
+      
+      // Update state once with all new tasks to avoid multiple re-renders
+      setTasks(prevTasks => [...prevTasks, ...newTasks]);
+      
+      // Force a re-render if needed
+      setTimeout(() => {
+        setIsMounted(prev => {
+          console.log("Forcing render update for duplicated tasks");
+          return prev;
+        });
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error duplicating task(s):', error);
+      alert('Failed to duplicate task(s): ' + error.message);
     }
-  } catch (error) {
-    console.error('Error duplicating task(s):', error);
-    alert('Failed to duplicate task(s): ' + error.message);
-  }
-};
-
-  
+  };
 
   useEffect(() => {
     const handleDragEnd = () => {
