@@ -644,9 +644,16 @@ const getWeekStartDateForDate = (dateStr) => {
                     <div className="section-header flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <h2 className="text-lg font-semibold">{renderSectionTitle(item)}</h2>
-                        <span className="text-sm text-gray-500 font-medium">
-                          {calculateSectionDuration(getTasksForSection(item.id))}
-                        </span>
+                        {(() => {
+                          const sectionTasks = getTasksForSection(item.id);
+                          const duration = calculateSectionDuration(sectionTasks);
+                          const colorClass = getDurationColorClass(duration.minutes);
+                          return (
+                            <span className={`text-sm font-medium ${colorClass}`}>
+                              {duration.formatted}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1153,7 +1160,20 @@ const startEditingTask = (taskId) => {
     };
   }, [handleBackgroundClick]);
 
-  // Replace the calculateSectionDuration function with this corrected version
+  // Add this function to determine the duration color class
+  const getDurationColorClass = (totalMinutes) => {
+    const totalHours = totalMinutes / 60;
+    
+    if (totalHours < 3) {
+      return 'text-green-600'; // Low load (< 3 hours)
+    } else if (totalHours < 6) {
+      return 'text-orange-500'; // Medium load (3-6 hours)
+    } else {
+      return 'text-red-600'; // High load (> 6 hours)
+    }
+  };
+
+  // Modify the calculateSectionDuration function to return both duration and total minutes
   const calculateSectionDuration = (sectionTasks) => {
     // Convert all durations to minutes for calculation
     const totalMinutes = sectionTasks.reduce((sum, task) => {
@@ -1185,7 +1205,7 @@ const startEditingTask = (taskId) => {
     }, 0);
     
     // Format the output based on value
-    if (totalMinutes === 0) return '0:00';
+    if (totalMinutes === 0) return { formatted: '0:00', minutes: 0 };
     
     // Calculate hours and minutes
     const hours = Math.floor(totalMinutes / 60);
@@ -1194,7 +1214,10 @@ const startEditingTask = (taskId) => {
     // Format with leading zeros for minutes when needed
     const formattedMinutes = minutes.toString().padStart(2, '0');
     
-    return `${hours}:${formattedMinutes}`;
+    return { 
+      formatted: `${hours}:${formattedMinutes}`,
+      minutes: totalMinutes
+    };
   };
 
   return (
