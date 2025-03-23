@@ -17,7 +17,7 @@ export default function PrivacyPolicy() {
         <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6 text-gray-800">
           <h1 className="text-3xl font-bold mb-6">Privacy Policy</h1>
           
-          <p className="mb-4">Last Updated: October 2023</p>
+          <p className="mb-4">Last Updated: March 2025</p>
           
           <section className="mb-8">
             <h2 className="text-2xl font-semibold mb-4">Introduction</h2>
@@ -69,6 +69,21 @@ export default function PrivacyPolicy() {
           <section className="mb-8">
             <h2 className="text-2xl font-semibold mb-4">Contact Us</h2>
             <p className="mb-4">If you have any questions about this Privacy Policy, please contact us at omer12899@gmail.com.</p>
+          </section>
+          
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">Sharing of Google User Data</h2>
+            <p className="mb-4"><strong>TaskNest does not share, transfer, or disclose Google user data to any third parties</strong>, except in the following limited circumstances:</p>
+            
+            <ul className="list-disc ml-6 mt-2 mb-4">
+              <li><strong>With your explicit consent</strong>: We will only share your Google data with third parties if you explicitly request us to do so.</li>
+              <li><strong>For legal compliance</strong>: We may share information when required to comply with applicable laws, regulations, legal processes, or enforceable governmental requests.</li>
+              <li><strong>Service providers</strong>: We may share limited information with trusted service providers who help us operate our service (such as hosting providers), under strict confidentiality agreements that prohibit them from using the data for any other purpose.</li>
+            </ul>
+            
+            <p className="mb-4">TaskNest does not sell, rent, or monetize your Google user data or content in any way. All calendar data accessed through Google Calendar API is only used for the specific purpose of creating and syncing tasks as requested by you.</p>
+            
+            <p className="mb-4">Our use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-blue-600 hover:underline">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
           </section>
           
           <button 
